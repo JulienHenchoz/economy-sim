@@ -1,0 +1,14 @@
+graine 1
+   a1: pop 1001 faim 1% (†faim 0/15, nais 16) IPC 204 G 0.33 PIB 1606k déf 2.1% dette 3% taux 1.1% trés 20j coupe 1.16 | dir 9.9% infl 1% crédit 1k BC 0k étr 0k M 301k
+   a2: pop 1002 faim 0% (†faim 0/12, nais 13) IPC 244 G 0.41 PIB 1864k déf 4.8% dette 8% taux 2.3% trés 16j coupe 1.04 | dir 19.7% infl 20% crédit 0k BC 0k étr 42k M 341k
+   a3: pop 1017 faim 0% (†faim 0/11, nais 26) IPC 220 G 0.32 PIB 1837k déf 0.8% dette 8% taux 2.9% trés 19j coupe 1.12 | dir 1.2% infl -10% crédit 25k BC 8k étr 59k M 389k
+   a4: pop 1022 faim 0% (†faim 0/17, nais 22) IPC 188 G 0.29 PIB 1690k déf 1.1% dette 10% taux 1.9% trés 18j coupe 1.26 | dir 0.0% infl -15% crédit 44k BC 46k étr 0k M 392k
+   a5: pop 656 faim 23% (†faim 340/377, nais 11) IPC 322 G 0.41 PIB 1734k déf -4.0% dette 7% taux 2.8% trés 17j coupe 1.30 | dir 11.6% infl 70% crédit 9k BC 16k étr 0k M 354k
+   a6: pop 475 faim 4% (†faim 133/191, nais 10) IPC 1560 G 0.40 PIB 4561k déf 11.2% dette 17% taux 11.4% trés 9j coupe 1.07 | dir 19.7% infl 388% crédit 1k BC 239k étr 228k M 783k
+graine 2
+   a1: pop 1002 faim 1% (†faim 0/13, nais 15) IPC 196 G 0.29 PIB 1535k déf 2.2% dette 3% taux 0.8% trés 20j coupe 1.18 | dir 13.5% infl 10% crédit 0k BC 0k étr 0k M 300k
+   a2: pop 999 faim 1% (†faim 0/14, nais 11) IPC 265 G 0.30 PIB 1879k déf 5.7% dette 8% taux 2.5% trés 16j coupe 1.05 | dir 19.8% infl 35% crédit 0k BC 0k étr 67k M 366k
+   a3: pop 1003 faim 1% (†faim 0/13, nais 17) IPC 275 G 0.34 PIB 2157k déf 1.6% dette 9% taux 4.9% trés 19j coupe 1.09 | dir 10.2% infl 4% crédit 1k BC 44k étr 73k M 408k
+   a4: pop 1004 faim 0% (†faim 0/12, nais 13) IPC 226 G 0.34 PIB 1997k déf -0.4% dette 10% taux 2.8% trés 26j coupe 1.26 | dir 0.5% infl -18% crédit 31k BC 12k étr 74k M 408k
+   a5: pop 1007 faim 0% (†faim 0/11, nais 14) IPC 215 G 0.27 PIB 1906k déf 3.6% dette 15% taux 1.9% trés 16j coupe 1.21 | dir 1.9% infl -4% crédit 47k BC 76k étr 0k M 420k
+   a6: pop 447 faim 48% (†faim 384/570, nais 10) IPC 202 G 0.36 PIB 907k déf -16.4% dette 10% taux 2.6% trés 38j coupe 1.30 | dir 5.5% infl -6% crédit 11k BC 26k étr 0k M 362k

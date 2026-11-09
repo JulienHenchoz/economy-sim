@@ -1,0 +1,14 @@
+graine 7
+   a1: pop 1004 faim 1% (†faim 0/10, nais 14) IPC 203 G 0.33 PIB 1580k déf 3.8% dette 4% taux 1.3% trés 19j coupe 1.08 | dir 9.4% infl -4% crédit 1k BC 0k étr 0k M 301k
+   a2: pop 839 faim 7% (†faim 157/172, nais 7) IPC 834 G 0.54 PIB 3932k déf 6.2% dette 12% taux 7.9% trés 7j coupe 0.94 | dir 19.2% infl 309% crédit 3k BC 158k étr 197k M 656k
+   a3: pop 777 faim 3% (†faim 59/76, nais 14) IPC 1709 G 0.51 PIB 7291k déf 10.3% dette 17% taux 18.8% trés 8j coupe 0.69 | dir 20.0% infl 106% crédit 0k BC 402k étr 343k M 1002k
+   a4: pop 763 faim 2% (†faim 3/27, nais 13) IPC 1110 G 0.52 PIB 5778k déf -3.6% dette 17% taux 9.7% trés 13j coupe 0.79 | dir 3.1% infl -35% crédit 30k BC 172k étr 259k M 664k
+   a5: pop 762 faim 1% (†faim 3/16, nais 15) IPC 1022 G 0.43 PIB 5503k déf -0.2% dette 17% taux 6.9% trés 16j coupe 0.81 | dir 0.1% infl -8% crédit 84k BC 241k étr 265k M 784k
+   a6: pop 762 faim 0% (†faim 0/11, nais 11) IPC 513 G 0.42 PIB 3308k déf -4.1% dette 21% taux 4.7% trés 20j coupe 0.96 | dir 0.0% infl -50% crédit 73k BC 188k étr 96k M 552k
+graine 8
+   a1: pop 1004 faim 1% (†faim 0/11, nais 15) IPC 194 G 0.31 PIB 1550k déf 2.9% dette 3% taux 1.0% trés 19j coupe 1.12 | dir 8.2% infl -8% crédit 2k BC 0k étr 0k M 302k
+   a2: pop 894 faim 11% (†faim 109/124, nais 14) IPC 295 G 0.36 PIB 2019k déf 2.8% dette 9% taux 1.6% trés 13j coupe 1.12 | dir 14.6% infl 52% crédit 19k BC 14k étr 57k M 397k
+   a3: pop 900 faim 0% (†faim 0/9, nais 15) IPC 256 G 0.35 PIB 1965k déf 0.8% dette 8% taux 2.5% trés 24j coupe 1.17 | dir 8.5% infl -13% crédit 7k BC 0k étr 40k M 362k
+   a4: pop 902 faim 0% (†faim 0/13, nais 15) IPC 233 G 0.33 PIB 1815k déf 0.3% dette 8% taux 2.3% trés 20j coupe 1.24 | dir 0.3% infl -9% crédit 37k BC 24k étr 2k M 376k
+   a5: pop 905 faim 0% (†faim 0/10, nais 13) IPC 257 G 0.30 PIB 1986k déf 4.6% dette 12% taux 1.8% trés 18j coupe 1.22 | dir 13.9% infl 10% crédit 35k BC 24k étr 22k M 403k
+   a6: pop 895 faim 0% (†faim 0/18, nais 8) IPC 263 G 0.28 PIB 2001k déf 2.3% dette 14% taux 3.0% trés 16j coupe 1.21 | dir 5.8% infl 2% crédit 8k BC 0k étr 70k M 403k

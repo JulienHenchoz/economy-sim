@@ -1,0 +1,7 @@
+graine 1
+   a1: pop 1006 faim 1% (†faim 0/12, nais 18) IPC 200 G 0.31 PIB 1593k déf 1.8% dette 3% taux 1.0% trés 20j coupe 1.05 | dir 9.4% infl -7% crédit 0k BC 0k étr 0k M 300k
+   a2: pop 1014 faim 0% (†faim 0/7, nais 15) IPC 215 G 0.31 PIB 1701k déf 1.8% dette 5% taux 2.1% trés 19j coupe 0.94 | dir 12.6% infl 8% crédit 4k BC 0k étr 16k M 320k
+   a3: pop 340 faim 56% (†faim 566/684, nais 10) IPC 52 G 0.37 PIB 433k déf -56.5% dette 2% taux 1.6% trés 230j coupe 1.19 | dir 0.4% infl -76% crédit 10k BC 0k étr 0k M 314k
+   a4: pop 18 faim 26% (†faim 291/322, nais 0) IPC 10 G 0.28 PIB 7k déf -1131.3% dette 72% taux 1.6% trés 43829j coupe 1.30 | dir 0.0% infl -81% crédit 0k BC 0k étr 0k M 313k
+   a5: pop 9 faim 4% (†faim 8/9, nais 0) IPC 8 G 0.27 PIB 0k déf -Infinity% dette 47073600% taux 1.6% trés 29192818j coupe 1.20 | dir 0.0% infl -15% crédit 0k BC 0k étr 0k M 312k
+   a6: pop 2 faim 5% (†faim 6/7, nais 0) IPC 8 G 0.34 PIB 0k déf -Infinity% dette 47073600% taux 1.6% trés 73764600j coupe 0.95 | dir 0.9% infl 0% crédit 0k BC 0k étr 0k M 312k

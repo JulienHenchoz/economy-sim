@@ -1,0 +1,14 @@
+graine 3
+   a1: pop 1002 faim 1% (†faim 0/15, nais 17) IPC 210 G 0.30 PIB 1605k déf 3.1% dette 4% taux 1.4% trés 19j coupe 1.08 | dir 6.8% infl -13% crédit 3k BC 0k étr 2k M 305k
+   a2: pop 1004 faim 0% (†faim 0/9, nais 11) IPC 257 G 0.33 PIB 1818k déf 3.4% dette 8% taux 2.1% trés 16j coupe 1.04 | dir 18.9% infl 22% crédit 9k BC 0k étr 45k M 353k
+   a3: pop 1005 faim 0% (†faim 0/14, nais 15) IPC 226 G 0.33 PIB 1708k déf 1.3% dette 10% taux 2.5% trés 20j coupe 1.06 | dir 1.7% infl -12% crédit 22k BC 0k étr 48k M 368k
+   a4: pop 1016 faim 0% (†faim 0/11, nais 22) IPC 239 G 0.30 PIB 1921k déf 0.8% dette 9% taux 2.1% trés 16j coupe 1.17 | dir 6.9% infl 6% crédit 43k BC 49k étr 0k M 393k
+   a5: pop 1021 faim 0% (†faim 0/10, nais 15) IPC 210 G 0.30 PIB 1868k déf 2.7% dette 11% taux 2.9% trés 17j coupe 1.21 | dir 6.0% infl -12% crédit 31k BC 0k étr 26k M 362k
+   a6: pop 176 faim 44% (†faim 782/852, nais 7) IPC 94 G 0.40 PIB 508k déf -62.5% dette 11% taux 2.3% trés 191j coupe 1.30 | dir 0.2% infl -55% crédit 4k BC 16k étr 7k M 360k
+graine 4
+   a1: pop 999 faim 1% (†faim 0/12, nais 11) IPC 191 G 0.31 PIB 1501k déf 2.3% dette 3% taux 0.9% trés 20j coupe 1.17 | dir 3.6% infl -12% crédit 3k BC 0k étr 0k M 303k
+   a2: pop 997 faim 0% (†faim 0/12, nais 10) IPC 236 G 0.31 PIB 1728k déf 4.2% dette 7% taux 2.3% trés 17j coupe 1.11 | dir 18.3% infl 24% crédit 11k BC 0k étr 33k M 345k
+   a3: pop 996 faim 1% (†faim 0/16, nais 15) IPC 284 G 0.29 PIB 2142k déf 3.0% dette 11% taux 2.7% trés 17j coupe 1.10 | dir 16.7% infl 20% crédit 3k BC 0k étr 77k M 380k
+   a4: pop 991 faim 0% (†faim 0/14, nais 9) IPC 176 G 0.29 PIB 1564k déf -0.5% dette 10% taux 2.9% trés 21j coupe 1.21 | dir 1.2% infl -38% crédit 23k BC 21k étr 8k M 351k
+   a5: pop 999 faim 0% (†faim 0/11, nais 19) IPC 193 G 0.30 PIB 1724k déf 0.2% dette 10% taux 2.2% trés 17j coupe 1.30 | dir 3.6% infl 9% crédit 45k BC 42k étr 0k M 388k
+   a6: pop 1001 faim 1% (†faim 0/11, nais 13) IPC 210 G 0.31 PIB 1862k déf 0.8% dette 10% taux 2.6% trés 15j coupe 1.30 | dir 14.1% infl 9% crédit 16k BC 0k étr 30k M 352k

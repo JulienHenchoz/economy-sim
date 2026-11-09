@@ -407,7 +407,7 @@ export class Simulation {
   /** Besoins de dépenses du mois (avant coupes), pour estimer le budget suivant. */
   private needMonth: Record<SpendKey, number> = zeroSpend();
   /** Comptes mensuels (centimes) : recettes, dépenses, PIB, besoins ; 48 derniers mois. */
-  monthLog: { rev: number; spend: number; gdp: number; ix: number; needs: Record<SpendKey, number> }[] = [];
+  monthLog: { rev: number; spend: number; gdp: number; ix: number; cut: number; needs: Record<SpendKey, number> }[] = [];
   private monthGdp = 0;
   /** Tension sur la dette (0..1) : monte après une enchère ratée ou un défaut, puis retombe. */
   debtStress = 0;
@@ -2498,7 +2498,8 @@ export class Simulation {
     const rev = REV_KEYS.reduce((s, k) => s + this.stateMonth.revenue[k], 0);
     const spend = SPEND_KEYS.reduce((s, k) => s + this.stateMonth.spending[k], 0);
     this.needMonth.interets = this.stateMonth.spending.interets;
-    this.monthLog.push({ rev, spend, gdp: this.monthGdp, ix: this.indexFactor(), needs: this.needMonth });
+    this.needMonth.redistribution = this.stateMonth.spending.redistribution;
+    this.monthLog.push({ rev, spend: spend - this.stateMonth.spending.aideUrgence, gdp: this.monthGdp, ix: this.indexFactor(), cut: this.budgetCut, needs: this.needMonth });
     if (this.monthLog.length > 48) this.monthLog.shift();
     this.needMonth = zeroSpend();
     this.monthGdp = 0;
@@ -2687,7 +2688,8 @@ export class Simulation {
     // investisseurs étrangers : taux mondial + prime de risque, dans la limite du plafond
     const p = this.policy;
     const gdp = this.gdpYear();
-    const foreignRoom = Math.max(0, p.foreignDebtCap * gdp - this.foreignBonds);
+    // plafond ancré sur le PIB de départ (5 fois la masse monétaire initiale) : il ne gonfle pas avec l'inflation
+    const foreignRoom = Math.max(0, p.foreignDebtCap * this.initialMoney * 5 - this.foreignBonds);
     if (foreignRoom > 1000) {
       const r = K.worldRate + prem * 1.5;
       rates.set(++tag, r);
@@ -2806,7 +2808,9 @@ export class Simulation {
     // les prix de départ s'ajustent la première année : la banque centrale ne réagit qu'ensuite
     if (this.day < D) this.inflation = clamp(this.inflation, -0.1, 0.1);
     const t = this.policy.inflationTarget;
-    this.policyRate = clamp(0.02 + this.inflation + 0.5 * (this.inflation - t), 0, 0.2);
+    // ajustement progressif (lissage des banques centrales) : un quart de l'écart chaque mois
+    const taylor = clamp(0.02 + this.inflation + 0.5 * (this.inflation - t), 0, 0.2);
+    this.policyRate += 0.25 * (taylor - this.policyRate);
   }
 
   /**
