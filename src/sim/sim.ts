@@ -1562,10 +1562,15 @@ export class Simulation {
       }, false, cut],
       ['revenuUniversel', adults, () => Math.round(p.ubi * 100 * ix), false, cut],
     ];
+    const totals = plan.map(([, list, amount]) => list.reduce((s, a) => s + Math.max(0, amount(a)), 0));
+    // avance de trésorerie : les impôts directs n'arrivent qu'en fin de mois ; si la caisse ne couvre
+    // pas les versements du jour, l'État emprunte de quoi tenir cinq jours plutôt que de suspendre
+    // pensions et aides
+    const due = plan.reduce((s, x, i) => s + totals[i] * x[4], 0);
+    if (due > 0 && this.treasury < due) this.issueBonds(Math.round(due * 5 - this.treasury));
     let worst = 1;
-    for (const [k, list, amount, taxable, share] of plan) {
-      let tot = 0;
-      for (const a of list) tot += Math.max(0, amount(a));
+    for (const [i, [k, list, amount, taxable, share]] of plan.entries()) {
+      let tot = totals[i];
       this.needMonth[k] += tot;
       tot *= share;
       if (tot <= 0) continue;

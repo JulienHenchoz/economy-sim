@@ -10,7 +10,9 @@ const t0 = Date.now();
 for (let i = 0; i < days; i++) {
   sim.step();
   if (sim.moneyError !== 0) {
-    console.error(`!! masse monétaire non conservée au jour ${sim.day} : écart ${sim.moneyError} centimes`);
+    // la masse monétaire n'est plus fixe (banque centrale, crédit, étranger), mais chaque écu créé ou
+    // détruit est comptabilisé : total − (masse initiale + création nette) doit rester nul
+    console.error(`!! monnaie apparue ou disparue hors création comptabilisée au jour ${sim.day} : écart ${sim.moneyError} centimes`);
     process.exit(1);
   }
   if (sim.day % every === 0) {
@@ -28,6 +30,7 @@ for (let i = 0; i < days; i++) {
     const d = sim.history.slice(-every);
     const deaths = d.reduce((s, r) => ({ age: s.age + r.deaths.age, faim: s.faim + r.deaths.faim, maladie: s.maladie + r.deaths.maladie }), { age: 0, faim: 0, maladie: 0 });
     const births = d.reduce((s, r) => s + r.births, 0);
+    console.log(`   monnaie ${f(h.moneyTotal)} (créée : BC ${f(h.moneyCreated.bc)} banque ${f(h.moneyCreated.banque)} étranger ${f(h.moneyCreated.etranger)}) dette ${f(h.debt)} (${f(h.debtRatio * 100)} % du PIB, taux ${f(h.avgRate * 100, 1)} %) taux directeur ${f(h.policyRate * 100, 1)} % crédits ${f(h.bankLoans)}`);
     console.log(`   naissances ${births} décès âge ${deaths.age} faim ${deaths.faim} maladie ${deaths.maladie}`);
   }
 }
