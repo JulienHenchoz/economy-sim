@@ -1,0 +1,21 @@
+{
+  "name": "economy",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Simulation d'économie d'une île (1000 habitants) : marché aux enchères, entreprises, État",
+  "scripts": {
+    "dev": "vite --host",
+    "build": "tsc --noEmit && vite build",
+    "headless": "tsx scripts/headless.ts"
+  },
+  "dependencies": {
+    "chart.js": "^4.6.1",
+    "chartjs-chart-sankey": "^0.19.1"
+  },
+  "devDependencies": {
+    "tsx": "^4.23.15",
+    "typescript": "^7.0.2",
+    "vite": "^8.3.6"
+  }
+}

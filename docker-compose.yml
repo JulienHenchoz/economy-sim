@@ -1,0 +1,32 @@
+# Simulation d'économie d'une île : site statique, la simulation tourne dans le navigateur.
+services:
+  economy:
+    build: .
+    image: economy-app:latest
+    container_name: economy
+    restart: unless-stopped
+    read_only: true
+    tmpfs:
+      - /tmp
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    deploy:
+      resources:
+        limits:
+          cpus: "0.5"
+          memory: 64M
+    networks:
+      - traefik_proxy
+    labels:
+      - "traefik.enable=true"
+      - "traefik.docker.network=traefik_proxy"
+      - "traefik.http.routers.economy.rule=Host(`economy.lan`)"
+      - "traefik.http.routers.economy.entrypoints=websecure"
+      - "traefik.http.routers.economy.tls=true"
+      - "traefik.http.services.economy.loadbalancer.server.port=8080"
+
+networks:
+  traefik_proxy:
+    external: true
