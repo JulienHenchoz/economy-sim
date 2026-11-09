@@ -25,8 +25,11 @@ les inégalités et l'effet des politiques publiques. Projet perso de Julien, se
 
 ## Règles du modèle (résumé)
 
-- Un pas = un jour (mois 30 j, an 360 j). **Masse monétaire fixe en centimes entiers** : aucun écu créé ou
-  détruit. `scripts/headless.ts` s'arrête si la conservation est violée ; l'UI l'affiche (KPI « Masse monétaire »).
+- Un pas = un jour (mois 30 j, an 360 j). Monnaie en **centimes entiers**. Depuis le 2026-11-09 (branche
+  budget-dette-monnaie), **la masse monétaire n'est plus fixe** : banque centrale, crédit bancaire et
+  étranger créent ou détruisent de la monnaie, mais chaque mouvement passe par `mint()` ;
+  `moneyError` = total − `moneyBase` (initiale + création nette) doit rester à 0. `scripts/headless.ts`
+  s'arrête sinon ; l'UI l'affiche (KPI « Masse monétaire », « comptes justes »).
 - Chaîne : producteurs (blé, poisson, lait+bétail, œufs, fruits, bois) → transformateurs (boulanger,
   poissonnier, boucher, fromager, charpentier → outils, artisan → artisanat) → commerçants (seuls à vendre
   aux ménages, capacité limitée, taxe sur les locaux) → ménages. Enseignants payés par l'État ; médecins
@@ -38,8 +41,23 @@ les inégalités et l'effet des politiques publiques. Projet perso de Julien, se
   (**patron = plus gros apport en capital**, parts au prorata), salaires = 70 % de la VA par travailleur.
 - Reconversions étalées (1/30 des actifs par jour), attrait d'un métier plafonné à 3× le revenu moyen.
 - État : impôts (revenu à deux tranches, TVA, sociétés, fortune, succession, locaux), dépenses (fonction
-  publique, pensions, aide sociale par membre du foyer, revenu universel), indexation sur l'IPC, reversement
-  de l'excédent au-delà de `surplusDays` jours de dépenses.
+  publique, pensions, aide sociale par membre du foyer, revenu universel, achats publics : cantines, bois,
+  outils ; aide d'urgence après catastrophe), indexation sur l'IPC du mois. Dividende public au-delà de
+  `surplusDays` jours (désactivé par défaut) ; sans dette, filet automatique au-delà de 90 jours.
+- Budget (`voteBudget`, fin du 1er mois puis chaque année, rectificatif tous les 90 j) : besoins chiffrés
+  (effectifs × montants, 12 derniers mois pour aides et soins, achats **que le marché a pu fournir**,
+  intérêts) ; l'État dépense recettes prévues + déficit permis par `fiscalRule` (`equilibre`,
+  `cibleDeficit`, `freinDette`) et `debtCeiling` ; enveloppes au prorata (`budgetCut` 0,3 à 1,6, pas de
+  10 points par vote annuel, 5 par rectificatif).
+- Dette (`issueBonds`, `manageDebt`) : obligations à 360 j, coupon mensuel, enchère uniforme entre ménages
+  (au-delà de 30 j de dépenses), entreprises, étranger (`foreignDebtCap`, 3 % + prime) et banque centrale
+  (prêteur en dernier ressort, `cbFinancing`). Emprunt mensuel + **avance de trésorerie** en cours de mois
+  si la caisse ne couvre pas les versements du jour. Détenteurs : id ≥ 0 habitant, −2−id entreprise,
+  `CB_KEY`, `FOREIGN_KEY` ; héritage, fusion et dissolution déplacent les titres (`moveBonds`).
+- Monnaie (`monetaryPolicy`, `bankCredit`) : inflation = 12 mois / 12 mois précédents (relevés à partir du
+  6e mois ; 6/6 mois avant deux ans), taux directeur Taylor lissé (¼ de l'écart par mois, 0-20 %, neutre
+  la 1re année) ; achats d'obligations si inflation < cible ; crédit aux entreprises dès l'an 2 (24 mois,
+  taux directeur + `bankSpread`, plafond `creditLimit` × PIB de départ, intérêts aux déposants).
 - Santé (`healthcare()`, privatisée le 2026-11-09) : maladies bénignes (1 journée de soin) ou graves
   (10 journées, mortelles sans soins), suivi mensuel des 60 ans et plus. **Médecins libéraux** (≈ 1 acte
   par jour) : honoraires appris (cabinet plein → hausse, peu occupé → baisse, plancher 0,4 × `avgIncome`,
@@ -72,6 +90,18 @@ mécanismes qui le tiennent et qu'il ne faut pas retirer à la légère :
   famines en série) ; l'étape `healthcare()` tourne **avant** `businessFinance()` (sinon honoraires et
   primes ne comptent pas dans la VA, médecins et assureurs se croient sans revenu et partent) ; sans
   `secuRatePoor`, les pauvres non assurés meurent de maladies graves (population en baisse lente).
+- **prix de détail sans cliquet** : si plus de la moitié de la demande d'un bien n'est pas servie, `lastR` ne
+  baisse pas. Sinon des invendus bradés le tirent vers zéro ; or il plafonne les achats en gros des
+  commerçants (`maxP`), qui ne suivent plus le prix de gros : la filière du pain s'éteint et la famine vient
+  alors que les ménages ont de l'argent. Le faire **monter** dans ce cas (+1 à 5 %/j) déclenche des
+  hyperinflations.
+- budget : sans dette, l'État ne doit pas thésauriser (déflation puis famine) → filet de 90 jours ;
+  compter les achats publics non servis dans les besoins fait couper les autres enveloppes (déficit réalisé
+  0,3 % au lieu de la cible) ; recaler **toutes** les enveloppes sur la dépense réelle déstabilise.
+- avance de trésorerie : sans elle, la caisse se vide avant les impôts de fin de mois (jusqu'à 250 j sur
+  6 ans), pensions et aides suspendues, crises plus fréquentes.
+- inflation de la banque centrale : ne pas mesurer sur les 6 premiers mois (prix de départ 100 → 200),
+  sinon taux directeur à 20 % toute la 2e année. Le taux directeur oscille quand même beaucoup (récoltes).
 
 Au 2026-11-09, sur 8 graines × 6 ans : aucun effondrement, aucun décès de faim. Après la privatisation de la
 santé, sur 20 graines × 6 ans : 2 crises alimentaires (graine 4 : 25 morts, graine 11 : 110), contre 3 pour
@@ -79,8 +109,15 @@ la version précédente sur les mêmes graines (graine 14 : 6, 17 : 300, 18 : 1)
 Le préréglage « Laisser-faire » s'effondre (famine la première année), déjà avant la santé. Les crises
 restent possibles, c'est assumé et expliqué dans l'onglet « Le modèle ».
 
+Branche budget-dette-monnaie, mesuré sur Mac le 2026-11-09 (les trajectoires diffèrent du Pi : comparer
+sur la même machine), 64 graines × 6 ans : `main` 3539 décès de faim (10 crises), branche 381 (3 crises :
+graines 7, 8, 33) et 6 dérives inflationnistes sans famine (flambée du blé → indexation → déficit financé
+par la BC, IPC × 3-4). Déficit moyen 1,5-3 % du PIB, dette/PIB vers le plafond de 20 % en 12 ans, taux
+2-4 %, trésorerie 17-20 j, Gini 0,27-0,35. « État-providence » s'effondre sur la moitié des graines (déjà sur
+`main`). Journal : `docs/calibrage-budget-dette-monnaie.md`, sorties : `docs/runs/mac-*.txt`.
+
 Tester une modification du modèle sur plusieurs graines avant de la déployer (le Pi est lent : ~1 min par
-graine et par 6 ans, lancer en parallèle) :
+graine et par 6 ans, ~35 s sur Mac ; lancer en parallèle) :
 
 ```bash
 npx tsx scripts/multi.ts 6 1 2      # résumé annuel par graine (pop, faim, IPC, Gini) ; POLICY='{…}' pour une politique
@@ -88,6 +125,8 @@ npx tsx scripts/headless.ts 1440 42 90   # détail tous les 90 jours (prix, empl
 npx tsx scripts/hungry.ts 720       # qui a faim, avec quel argent et quel revenu
 npx tsx scripts/nutri.ts 150        # nutrition produite / vendue / gaspillée vs besoin
 npx tsx scripts/debug.ts 30 42 5    # marchés jour par jour
+npx tsx scripts/budget.ts 6 1 '{…}' # budget annuel : recettes, dépenses par poste, budget voté, monnaie
+npx tsx scripts/restore.ts          # instantanés déterministes (jours 360 et 1000) : doit afficher IDENTIQUE
 ```
 
 ## Commandes
@@ -104,5 +143,5 @@ Homepage dans le groupe « Documents ». Pas de port publié : uniquement via Tr
 
 ## Pistes v2
 
-Crédit et banque (création monétaire), logement et rente foncière, commerce extérieur, anticipations
+Prêts aux ménages, logement et rente foncière, commerce extérieur, anticipations
 des agents, plusieurs biens d'artisanat, comparaison automatique de politiques (plusieurs graines).

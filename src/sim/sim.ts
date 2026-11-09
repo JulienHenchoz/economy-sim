@@ -2813,15 +2813,13 @@ export class Simulation {
     if (this.day > D / 2) this.cpiLog.push(this.cpiIndex);
     if (this.cpiLog.length > 24) this.cpiLog.shift();
     // l'IPC mensuel est très volatil (cycles des récoltes) : inflation = prix moyens des 12 derniers
-    // mois / prix moyens des 12 mois précédents ; avant deux ans de relevés, deux moitiés égales,
-    // annualisées (au plus au carré, pour ne pas amplifier le bruit)
+    // mois / prix moyens des 12 mois précédents ; avant deux ans de relevés, 6 derniers mois / 6
+    // précédents (non annualisé : sur si peu de mois, le bruit des récoltes domine)
     const n = this.cpiLog.length;
     const avg = (a: number[]) => a.reduce((x, y) => x + y, 0) / a.length;
     if (n >= 24) this.inflation = avg(this.cpiLog.slice(12)) / avg(this.cpiLog.slice(0, 12)) - 1;
-    else if (n >= 6) {
-      const h = Math.floor(n / 2);
-      this.inflation = Math.pow(avg(this.cpiLog.slice(n - h)) / avg(this.cpiLog.slice(n - 2 * h, n - h)), Math.min(2, 12 / h)) - 1;
-    } else this.inflation = 0;
+    else if (n >= 12) this.inflation = avg(this.cpiLog.slice(n - 6)) / avg(this.cpiLog.slice(n - 12, n - 6)) - 1;
+    else this.inflation = 0;
     if (this.day < D) this.inflation = clamp(this.inflation, -0.1, 0.1);
     const t = this.policy.inflationTarget;
     // les prix de départ s'ajustent la première année : la banque centrale ne réagit qu'ensuite

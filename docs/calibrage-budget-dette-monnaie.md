@@ -76,3 +76,29 @@ Constats :
 3. `scripts/restore.ts` (instantanés déterministes), `npm run build`, test navigateur sans erreur.
 4. Mettre à jour CLAUDE.md (architecture, pièges, masse monétaire non fixe) et `headless.ts`.
 5. Déploiement sur le Pi (economy.lan) uniquement après validation.
+
+## Suite du 2026-11-09 (sur Mac, graines 1-64)
+
+Les trajectoires du Mac diffèrent de celles du Pi (chaos) : `main` y perd la graine 8 (824 décès),
+que le run « base » du Pi passait sans encombre. Toutes les comparaisons ci-dessous sont faites sur Mac.
+
+| Run | Changement | Graines | Décès de faim | Crises |
+|-----|------------|---------|---------------|--------|
+| main | référence | 1-64 | 3539 | 10 |
+| Q | HEAD de départ | 1-16 | 1787 | 3 |
+| N | Q sans lissage du taux | 1-8 | 2161 | 4 (le lissage n'était pas en cause) |
+| F3 | + prix de détail sans cliquet | 1-16 | 333 | 1 |
+| F4/F5 | + achats au réalisé, taux neutre an 1 | 1-32 | 556 | 2 |
+| R2 | + enveloppes 160 %, filet 90 j, avance de trésorerie | 1-32 | 66 | 1 |
+| R4/R6 | + inflation hors 6 premiers mois (R6 : 6/6 mois avant 2 ans) | 1-64 | 381 | 3 |
+
+Écartés : hausse du prix de détail en pénurie (F1/F2, hyperinflation), avances sans prêteur en dernier
+ressort (R3), indexation retardée (R5) : pas mieux à nombre de crises égal.
+
+Scénarios (8 graines, R2) : `equilibre` 3 décès, dette → 1 % ; déficit 8 % sans plafond : déficit réalisé
+3-6 %, dette 30-40 % en 12 ans, taux 6-10 %, BC ≈ 30 % de la dette, masse monétaire ×1,9, Gini stable ;
+île fermée 412 (graine 6, cycle du blé) ; Assurance obligatoire 119 ; Laisser-faire et État-providence
+s'effondrent comme sur `main`.
+
+Limites : cycle du blé (crises de l'an 2) ; flambées monétisées (indexation mensuelle + BC) sur ~10 % des
+graines ; taux directeur souvent à 15-20 % (inflation des récoltes) ; ~20 % des années en excédent.
