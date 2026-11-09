@@ -102,3 +102,34 @@ s'effondrent comme sur `main`.
 
 Limites : cycle du blé (crises de l'an 2) ; flambées monétisées (indexation mensuelle + BC) sur ~10 % des
 graines ; taux directeur souvent à 15-20 % (inflation des récoltes) ; ~20 % des années en excédent.
+
+## Budget complet, énergie, bilan (2026-11-09, suite)
+
+Demande de Julien : budget réaliste (11 postes manquants), énergie (pétrole, gaz, vert), élargir
+l'agroalimentaire, écran qualitatif. Graines 1-64 × 6 ans sur Mac.
+
+| Run | Changement | Décès de faim | Crises | Dérives IPC > 500 |
+|-----|------------|---------------|--------|-------------------|
+| main | référence | 3539 | 10 | 0 |
+| R6 | état précédent de la branche | 381 | 3 | 6 |
+| B1/B2 (16 graines) | services, énergie, impôts relevés | 84-257 | 1 | 5 |
+| B3 (16 graines) | + IPC chaîné | 15 | 0 | 0 |
+| B4 | idem, 64 graines | 786 | 3 | 0 |
+| G | + plafond 60 %, taxe carbone à la vente, vert 5,5 | 518 | 4 | 0 |
+
+Constats :
+- La cause principale des spirales était l'IPC à poids fixes (poisson rare et cher → IPC × 2 →
+  pensions et aides × 2 → déficit 10 %). IPC chaîné : plus aucune dérive.
+- Plafond de dette de 20 % incohérent avec un déficit de 3 % sans croissance : excédents imposés dès
+  l'an 5. À 60 %, la dette monte vers 30-40 % en 12 ans (taux 3-4,5 %), la population vers 1050.
+- Excédents restants (~20 % des années) : années de déflation (dépenses indexées qui baissent plus
+  vite que les recettes, perçues avec un mois de retard).
+- Taxe carbone : il fallait la prélever à la vente ; avec 1 é/unité, tout renouvelable en 4 ans.
+
+Scénarios (8 graines, G) : `equilibre` 0 décès (dette 2,5 %) ; déficit 8 % sans plafond : déficit
+6,3 %, dette 36 %, taux jusqu'à 8 %, une crise (graine 7, 396) ; île fermée 8 ; Transition écologique 79
+(graine 7) ; État-providence 0 ; Assurance obligatoire 2 ; Laisser-faire s'effondre (comme `main`).
+
+Limites : cycle du blé (crises restantes) ; infrastructures qui s'usent lentement sous la référence
+(achats de bois et d'outils plafonnés par la capacité) ; énergie fossile bon marché et volatile ;
+seuils du bilan choisis à la main.

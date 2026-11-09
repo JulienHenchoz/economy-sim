@@ -385,6 +385,11 @@ export function agentName(id: number): string {
 }
 
 const D = K.daysPerYear;
+/** « du pain », « de la viande »… pour la gazette. */
+const OF_GOOD: Record<Good, string> = {
+  ble: 'du blé', pain: 'du pain', poisson: 'du poisson frais', poisson_prep: 'du poisson préparé', betail: 'du bétail', viande: 'de la viande',
+  lait: 'du lait', fromage: 'du fromage', oeufs: 'des œufs', fruits: 'des fruits', bois: 'du bois', outils: 'des outils', artisanat: 'de l’artisanat', energie: 'de l’énergie',
+};
 const emptyGoods = (): Partial<Record<Good, number>> => ({});
 const zeroJobs = (): Record<Job, number> => Object.fromEntries(JOBS.map((j) => [j, 0])) as Record<Job, number>;
 const zeroRev = (): Record<RevKey, number> => Object.fromEntries(REV_KEYS.map((k) => [k, 0])) as Record<RevKey, number>;
@@ -2994,8 +2999,8 @@ export class Simulation {
     const year = Math.floor(this.day / D) + 1;
     const bal = (revenue - (base * cut + needs.interets)) / gdp;
     let text = `Budget de l'an ${year} : ${Math.round((base * cut + needs.interets) / 100000)} k écus de dépenses pour ${Math.round(revenue / 100000)} k de recettes prévues, ${bal < 0 ? `déficit de ${(-bal * 100).toFixed(1)} %` : `excédent de ${(bal * 100).toFixed(1)} %`} du PIB.`;
-    if (cut < 0.995) text += ` La règle budgétaire impose des coupes de ${Math.round((1 - cut) * 100)} % sur les pensions, aides, soins, achats et postes d'enseignants${ruleCut < cut - 0.005 ? ` (elle en demandait ${Math.round((1 - ruleCut) * 100)} % : l'ajustement est étalé)` : ''}.`;
-    else if (cut > 1.005) text += ` Les recettes permettent d'aller au-delà des besoins : pensions, aides, soins, achats et postes d'enseignants sont relevés de ${Math.round((cut - 1) * 100)} %.`;
+    if (cut < 0.995) text += ` La règle budgétaire impose des coupes de ${Math.round((1 - cut) * 100)} % sur les pensions, aides, soins, achats et postes publics${ruleCut < cut - 0.005 ? ` (elle en demandait ${Math.round((1 - ruleCut) * 100)} % : l'ajustement est étalé)` : ''}.`;
+    else if (cut > 1.005) text += ` Les recettes permettent d'aller au-delà des besoins : pensions, aides, soins, achats et postes publics sont relevés de ${Math.round((cut - 1) * 100)} %.`;
     else if (prev < 0.995) text += ' Les coupes de l’an dernier sont levées.';
     this.say('politique', text);
   }
@@ -3450,8 +3455,8 @@ export class Simulation {
       const b = now.retailPrice[g];
       if (!a || !b) continue;
       const r = b / a - 1;
-      if (r > 0.4) this.say('prix', `Flambée du prix ${GOOD_DEFS[g].label.toLowerCase() === 'œufs' ? 'des œufs' : `du ${GOOD_DEFS[g].label.toLowerCase()}`} : +${Math.round(r * 100)} % en un mois (${b.toFixed(2)} é).`);
-      else if (r < -0.35) this.say('prix', `Le prix ${GOOD_DEFS[g].label.toLowerCase() === 'œufs' ? 'des œufs' : `du ${GOOD_DEFS[g].label.toLowerCase()}`} s'effondre : ${Math.round(r * 100)} % en un mois.`);
+      if (r > 0.4) this.say('prix', `Flambée du prix ${OF_GOOD[g]} : +${Math.round(r * 100)} % en un mois (${b.toFixed(2)} é).`);
+      else if (r < -0.35) this.say('prix', `Le prix ${OF_GOOD[g]} s'effondre : ${Math.round(r * 100)} % en un mois.`);
     }
     const month = h.slice(-30);
     const famine = month.reduce((x, r) => x + r.deaths.faim, 0);

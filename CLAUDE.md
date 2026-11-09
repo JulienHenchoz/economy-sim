@@ -132,7 +132,12 @@ la version précédente sur les mêmes graines (graine 14 : 6, 17 : 300, 18 : 1)
 Le préréglage « Laisser-faire » s'effondre (famine la première année), déjà avant la santé. Les crises
 restent possibles, c'est assumé et expliqué dans l'onglet « Le modèle ».
 
-Branche budget-dette-monnaie, mesuré sur Mac le 2026-11-09 (les trajectoires diffèrent du Pi : comparer
+Après budget complet, énergie et IPC chaîné (2026-11-09, Mac, 64 graines × 6 ans) : 518 décès de faim,
+4 crises (graines 14, 18, 29, 51), aucune dérive inflationniste ; population médiane 1014, Gini 0,31, déficit
+2,4 %, dette 16 % à 6 ans (vers le plafond de 60 % en plusieurs décennies), taux 2,4 %, trésorerie 19 j,
+~20 % d'années excédentaires (années de déflation). État-providence tient désormais (0 décès sur 8 graines).
+
+Avant cela, branche budget-dette-monnaie, mesuré sur Mac le 2026-11-09 (les trajectoires diffèrent du Pi : comparer
 sur la même machine), 64 graines × 6 ans : `main` 3539 décès de faim (10 crises), branche 381 (3 crises :
 graines 7, 8, 33) et 6 dérives inflationnistes sans famine (flambée du blé → indexation → déficit financé
 par la BC, IPC × 3-4). Déficit moyen 1,5-3 % du PIB, dette/PIB vers le plafond de 20 % en 12 ans, taux

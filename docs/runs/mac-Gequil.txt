@@ -1,0 +1,56 @@
+graine 1
+   a1: pop 1009 faim 1% (†faim 0/11, nais 20) IPC 148 G 0.30 PIB 1393k déf 2.2% dette 3% taux 1.1% trés 19j coupe 0.97 | dir 3.3% infl 0% crédit 3k BC 0k étr 0k M 303k
+   a2: pop 1005 faim 0% (†faim 0/14, nais 10) IPC 122 G 0.40 PIB 1293k déf -1.2% dette 2% taux 1.5% trés 21j coupe 0.99 | dir 13.0% infl 40% crédit 27k BC 0k étr 0k M 327k
+   a3: pop 1007 faim 0% (†faim 0/13, nais 15) IPC 157 G 0.31 PIB 1449k déf 4.2% dette 5% taux 1.7% trés 20j coupe 0.84 | dir 19.8% infl 29% crédit 9k BC 0k étr 0k M 310k
+   a4: pop 1005 faim 0% (†faim 0/18, nais 16) IPC 116 G 0.43 PIB 1215k déf -2.7% dette 5% taux 1.4% trés 16j coupe 0.96 | dir 0.9% infl -27% crédit 22k BC 10k étr 0k M 334k
+   a5: pop 1008 faim 0% (†faim 0/18, nais 21) IPC 155 G 0.31 PIB 1545k déf 0.3% dette 4% taux 1.3% trés 20j coupe 0.98 | dir 16.1% infl 34% crédit 22k BC 12k étr 0k M 349k
+   a6: pop 1010 faim 0% (†faim 0/10, nais 12) IPC 120 G 0.33 PIB 1288k déf -1.3% dette 2% taux 1.4% trés 23j coupe 1.02 | dir 6.2% infl -23% crédit 11k BC 0k étr 0k M 325k
+graine 2
+   a1: pop 1005 faim 1% (†faim 0/11, nais 16) IPC 146 G 0.31 PIB 1373k déf 2.0% dette 3% taux 1.1% trés 20j coupe 0.97 | dir 3.3% infl 0% crédit 3k BC 0k étr 0k M 303k
+   a2: pop 1012 faim 1% (†faim 0/15, nais 22) IPC 158 G 0.35 PIB 1489k déf -0.9% dette 4% taux 2.0% trés 25j coupe 0.98 | dir 12.5% infl -11% crédit 16k BC 0k étr 1k M 317k
+   a3: pop 1014 faim 0% (†faim 0/12, nais 14) IPC 126 G 0.34 PIB 1356k déf -0.0% dette 2% taux 2.0% trés 24j coupe 0.96 | dir 0.4% infl -20% crédit 31k BC 0k étr 0k M 336k
+   a4: pop 1022 faim 0% (†faim 0/9, nais 17) IPC 126 G 0.32 PIB 1413k déf -0.5% dette 3% taux 1.5% trés 28j coupe 1.03 | dir 0.5% infl 0% crédit 42k BC 10k étr 0k M 360k
+   a5: pop 1022 faim 0% (†faim 0/15, nais 15) IPC 130 G 0.33 PIB 1449k déf -0.1% dette 1% taux 1.2% trés 23j coupe 1.02 | dir 7.7% infl 3% crédit 23k BC 0k étr 0k M 336k
+   a6: pop 1022 faim 0% (†faim 0/17, nais 17) IPC 113 G 0.38 PIB 1370k déf -0.8% dette 1% taux 1.0% trés 26j coupe 1.07 | dir 0.2% infl -13% crédit 35k BC 11k étr 0k M 363k
+graine 3
+   a1: pop 998 faim 1% (†faim 0/12, nais 10) IPC 156 G 0.30 PIB 1412k déf 2.7% dette 3% taux 1.2% trés 19j coupe 0.94 | dir 3.3% infl 0% crédit 3k BC 0k étr 0k M 303k
+   a2: pop 999 faim 0% (†faim 0/15, nais 16) IPC 158 G 0.34 PIB 1483k déf -0.3% dette 5% taux 1.7% trés 24j coupe 0.93 | dir 8.8% infl -23% crédit 15k BC 5k étr 0k M 322k
+   a3: pop 999 faim 1% (†faim 0/14, nais 14) IPC 129 G 0.48 PIB 1326k déf -2.9% dette 2% taux 1.2% trés 26j coupe 0.99 | dir 0.3% infl -19% crédit 35k BC 9k étr 0k M 346k
+   a4: pop 1001 faim 0% (†faim 0/15, nais 17) IPC 139 G 0.33 PIB 1434k déf 2.6% dette 3% taux 1.4% trés 31j coupe 0.95 | dir 16.0% infl 8% crédit 22k BC 13k étr 0k M 347k
+   a5: pop 998 faim 0% (†faim 0/12, nais 9) IPC 113 G 0.35 PIB 1359k déf -2.0% dette 2% taux 1.3% trés 27j coupe 1.05 | dir 0.5% infl -19% crédit 33k BC 0k étr 0k M 349k
+   a6: pop 998 faim 1% (†faim 0/12, nais 12) IPC 133 G 0.33 PIB 1498k déf -0.9% dette 1% taux 1.1% trés 24j coupe 1.09 | dir 12.7% infl 17% crédit 28k BC 0k étr 0k M 355k
+graine 4
+   a1: pop 1005 faim 1% (†faim 0/9, nais 14) IPC 143 G 0.34 PIB 1340k déf 2.6% dette 3% taux 1.2% trés 20j coupe 0.96 | dir 3.3% infl 0% crédit 3k BC 0k étr 0k M 303k
+   a2: pop 1010 faim 1% (†faim 0/12, nais 17) IPC 202 G 0.33 PIB 1650k déf 3.9% dette 9% taux 2.0% trés 21j coupe 0.86 | dir 17.5% infl 60% crédit 15k BC 0k étr 73k M 389k
+   a3: pop 1007 faim 1% (†faim 0/11, nais 8) IPC 175 G 0.40 PIB 1585k déf -2.9% dette 5% taux 1.9% trés 36j coupe 0.87 | dir 2.7% infl -14% crédit 29k BC 0k étr 0k M 330k
+   a4: pop 1008 faim 0% (†faim 0/21, nais 22) IPC 173 G 0.35 PIB 1585k déf 1.5% dette 6% taux 2.8% trés 27j coupe 0.85 | dir 10.8% infl -0% crédit 29k BC 20k étr 5k M 359k
+   a5: pop 1007 faim 1% (†faim 0/17, nais 16) IPC 214 G 0.37 PIB 1925k déf 0.2% dette 6% taux 2.8% trés 24j coupe 0.84 | dir 13.2% infl 23% crédit 33k BC 0k étr 46k M 387k
+   a6: pop 1007 faim 5% (†faim 0/15, nais 15) IPC 132 G 0.35 PIB 1475k déf -3.6% dette 4% taux 2.0% trés 29j coupe 1.01 | dir 1.1% infl -38% crédit 30k BC 0k étr 0k M 341k
+graine 5
+   a1: pop 991 faim 1% (†faim 0/19, nais 10) IPC 139 G 0.33 PIB 1350k déf 0.8% dette 2% taux 1.0% trés 21j coupe 1.03 | dir 3.3% infl 0% crédit 3k BC 0k étr 0k M 303k
+   a2: pop 994 faim 0% (†faim 0/14, nais 17) IPC 157 G 0.32 PIB 1450k déf 1.9% dette 5% taux 1.7% trés 24j coupe 0.97 | dir 17.4% infl 38% crédit 14k BC 0k étr 3k M 319k
+   a3: pop 996 faim 0% (†faim 0/16, nais 18) IPC 142 G 0.36 PIB 1374k déf -0.6% dette 4% taux 1.8% trés 26j coupe 0.96 | dir 2.7% infl -10% crédit 27k BC 0k étr 0k M 329k
+   a4: pop 1001 faim 0% (†faim 0/12, nais 17) IPC 136 G 0.32 PIB 1414k déf -1.1% dette 3% taux 1.6% trés 25j coupe 1.02 | dir 0.1% infl -4% crédit 38k BC 12k étr 0k M 355k
+   a5: pop 999 faim 0% (†faim 0/14, nais 12) IPC 129 G 0.37 PIB 1366k déf 0.5% dette 2% taux 1.2% trés 26j coupe 1.02 | dir 8.5% infl -5% crédit 25k BC 0k étr 0k M 334k
+   a6: pop 1009 faim 0% (†faim 0/6, nais 16) IPC 134 G 0.31 PIB 1428k déf -0.5% dette 3% taux 1.5% trés 26j coupe 1.01 | dir 3.3% infl 4% crédit 37k BC 0k étr 0k M 347k
+graine 6
+   a1: pop 999 faim 1% (†faim 0/13, nais 12) IPC 148 G 0.33 PIB 1363k déf 2.3% dette 3% taux 1.0% trés 19j coupe 0.94 | dir 3.3% infl 0% crédit 3k BC 0k étr 0k M 303k
+   a2: pop 989 faim 1% (†faim 0/21, nais 11) IPC 159 G 0.34 PIB 1458k déf -0.0% dette 5% taux 1.6% trés 23j coupe 0.95 | dir 15.5% infl 7% crédit 16k BC 0k étr 8k M 324k
+   a3: pop 987 faim 1% (†faim 0/16, nais 14) IPC 189 G 0.52 PIB 1729k déf 0.4% dette 8% taux 2.0% trés 20j coupe 0.89 | dir 9.8% infl 19% crédit 32k BC 0k étr 53k M 388k
+   a4: pop 980 faim 0% (†faim 0/18, nais 11) IPC 206 G 0.36 PIB 1659k déf 4.6% dette 7% taux 2.1% trés 26j coupe 0.79 | dir 18.4% infl 9% crédit 8k BC 0k étr 6k M 321k
+   a5: pop 978 faim 0% (†faim 0/20, nais 18) IPC 131 G 0.29 PIB 1080k déf 1.3% dette 11% taux 2.6% trés 23j coupe 0.77 | dir 0.6% infl -36% crédit 27k BC 21k étr 0k M 355k
+   a6: pop 981 faim 0% (†faim 0/10, nais 13) IPC 126 G 0.29 PIB 1253k déf -4.5% dette 4% taux 1.3% trés 25j coupe 0.92 | dir 0.0% infl -5% crédit 41k BC 20k étr 0k M 376k
+graine 7
+   a1: pop 1002 faim 1% (†faim 0/11, nais 13) IPC 149 G 0.34 PIB 1393k déf 2.0% dette 3% taux 1.0% trés 19j coupe 0.93 | dir 3.3% infl 0% crédit 3k BC 0k étr 0k M 303k
+   a2: pop 1003 faim 1% (†faim 0/17, nais 18) IPC 134 G 0.35 PIB 1390k déf -2.1% dette 2% taux 1.1% trés 24j coupe 1.00 | dir 16.3% infl 34% crédit 18k BC 0k étr 0k M 320k
+   a3: pop 1004 faim 1% (†faim 0/12, nais 13) IPC 146 G 0.32 PIB 1450k déf 2.5% dette 4% taux 1.3% trés 21j coupe 0.88 | dir 10.1% infl 9% crédit 25k BC 0k étr 0k M 332k
+   a4: pop 1006 faim 0% (†faim 0/16, nais 18) IPC 84 G 0.46 PIB 1136k déf -3.4% dette 1% taux 1.7% trés 50j coupe 1.06 | dir 0.9% infl -43% crédit 37k BC 0k étr 0k M 348k
+   a5: pop 1015 faim 0% (†faim 0/11, nais 20) IPC 105 G 0.39 PIB 1359k déf -1.6% dette 0% taux 1.3% trés 39j coupe 1.13 | dir 9.5% infl 24% crédit 39k BC 0k étr 0k M 361k
+   a6: pop 1016 faim 0% (†faim 0/11, nais 12) IPC 123 G 0.33 PIB 1372k déf 3.2% dette 4% taux 1.6% trés 29j coupe 1.01 | dir 19.7% infl 17% crédit 9k BC 0k étr 0k M 341k
+graine 8
+   a1: pop 995 faim 1% (†faim 0/16, nais 11) IPC 148 G 0.34 PIB 1351k déf 3.3% dette 4% taux 1.3% trés 20j coupe 0.95 | dir 3.3% infl 0% crédit 3k BC 0k étr 0k M 303k
+   a2: pop 992 faim 0% (†faim 0/16, nais 13) IPC 142 G 0.32 PIB 1358k déf -0.6% dette 4% taux 1.8% trés 22j coupe 0.98 | dir 16.6% infl 53% crédit 17k BC 0k étr 0k M 319k
+   a3: pop 997 faim 1% (†faim 0/10, nais 15) IPC 138 G 0.42 PIB 1305k déf -2.3% dette 3% taux 1.5% trés 25j coupe 0.95 | dir 2.2% infl -4% crédit 27k BC 0k étr 0k M 329k
+   a4: pop 1007 faim 0% (†faim 0/7, nais 17) IPC 146 G 0.37 PIB 1399k déf 3.7% dette 7% taux 3.0% trés 40j coupe 0.86 | dir 16.7% infl 7% crédit 13k BC 0k étr 40k M 357k
+   a5: pop 1005 faim 1% (†faim 0/16, nais 14) IPC 139 G 0.32 PIB 1431k déf -1.3% dette 4% taux 1.5% trés 22j coupe 0.97 | dir 0.5% infl -6% crédit 28k BC 11k étr 0k M 344k
+   a6: pop 1007 faim 1% (†faim 0/15, nais 17) IPC 130 G 0.31 PIB 1417k déf -2.0% dette 2% taux 1.3% trés 21j coupe 1.03 | dir 5.7% infl -7% crédit 21k BC 0k étr 0k M 328k
