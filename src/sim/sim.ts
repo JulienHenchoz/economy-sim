@@ -407,7 +407,7 @@ export class Simulation {
   /** Besoins de dépenses du mois (avant coupes), pour estimer le budget suivant. */
   private needMonth: Record<SpendKey, number> = zeroSpend();
   /** Comptes mensuels (centimes) : recettes, dépenses, PIB, besoins ; 48 derniers mois. */
-  monthLog: { rev: number; spend: number; gdp: number; ix: number; cut: number; needs: Record<SpendKey, number> }[] = [];
+  monthLog: { rev: number; spend: number; gdp: number; ix: number; cut: number; bought: number; needs: Record<SpendKey, number> }[] = [];
   private monthGdp = 0;
   /** Tension sur la dette (0..1) : monte après une enchère ratée ou un défaut, puis retombe. */
   debtStress = 0;
@@ -1285,6 +1285,7 @@ export class Simulation {
     for (const g of RETAIL_GOODS) {
       const bl = bids.get(g)!;
       const res = callAuction(bl, asks.get(g)!, rng);
+      const prevR = this.lastR[g];
       let filledQ = 0;
       if (res.price !== null) {
         const p = res.price;
@@ -1321,6 +1322,11 @@ export class Simulation {
         }
       }
       this.d.unmet[g] = Math.max(0, res.demand - filledQ);
+      // file d'attente devant des rayons vides : le prix de référence monte. Sinon, figé faute de
+      // ventes (ou fixé par quelques invendus bradés), il plafonne les achats en gros des commerçants,
+      // la filière ne peut plus suivre ses coûts et s'éteint alors que les ménages ont de quoi payer
+      const short = res.demand > 0 ? this.d.unmet[g]! / res.demand : 0;
+      if (short > 0.5) this.lastR[g] = Math.max(this.lastR[g], prevR);
       this.retailDemand[g] = res.demand;
       this.retailUnmet[g] = this.d.unmet[g]!;
     }
@@ -2499,7 +2505,7 @@ export class Simulation {
     const spend = SPEND_KEYS.reduce((s, k) => s + this.stateMonth.spending[k], 0);
     this.needMonth.interets = this.stateMonth.spending.interets;
     this.needMonth.redistribution = this.stateMonth.spending.redistribution;
-    this.monthLog.push({ rev, spend: spend - this.stateMonth.spending.aideUrgence, gdp: this.monthGdp, ix: this.indexFactor(), cut: this.budgetCut, needs: this.needMonth });
+    this.monthLog.push({ rev, spend: spend - this.stateMonth.spending.aideUrgence, gdp: this.monthGdp, ix: this.indexFactor(), cut: this.budgetCut, bought: this.stateMonth.spending.achats, needs: this.needMonth });
     if (this.monthLog.length > 48) this.monthLog.shift();
     this.needMonth = zeroSpend();
     this.monthGdp = 0;
@@ -2535,6 +2541,10 @@ export class Simulation {
     for (const k of ['aideSociale', 'remboursementsSante', 'subsidesPrimes', 'achats'] as SpendKey[]) {
       needs[k] = months.reduce((s, m) => s + m.needs[k], 0) * ann;
     }
+    // achats : seulement ce que le marché a pu fournir (ramené à un budget sans coupe). Les commandes
+    // publiques sont plafonnées par la capacité des producteurs ; compter les commandes non servies
+    // ferait réduire les autres enveloppes pour une dépense qui n'a pas lieu
+    needs.achats = Math.min(needs.achats, months.reduce((s, m) => s + m.bought / Math.max(0.3, m.cut), 0) * ann);
     // intérêts : la dette actuelle à son taux, plus le nouvel emprunt de l'année à mi-parcours
     let coupons = 0;
     for (const t of this.debt) for (const n of t.holders.values()) coupons += n * t.rate;
@@ -2805,9 +2815,13 @@ export class Simulation {
       const avg = (a: number[]) => a.reduce((x, y) => x + y, 0) / a.length;
       this.inflation = Math.pow(avg(this.cpiLog.slice(h)) / avg(this.cpiLog.slice(0, h)), 12 / h) - 1;
     } else this.inflation = 0;
-    // les prix de départ s'ajustent la première année : la banque centrale ne réagit qu'ensuite
-    if (this.day < D) this.inflation = clamp(this.inflation, -0.1, 0.1);
     const t = this.policy.inflationTarget;
+    // les prix de départ s'ajustent la première année : la banque centrale ne réagit qu'ensuite
+    // (taux neutre : 2 % réels + la cible)
+    if (this.day < D) {
+      this.policyRate = 0.02 + t;
+      return;
+    }
     // ajustement progressif (lissage des banques centrales) : un quart de l'écart chaque mois
     const taylor = clamp(0.02 + this.inflation + 0.5 * (this.inflation - t), 0, 0.2);
     this.policyRate += 0.25 * (taylor - this.policyRate);
