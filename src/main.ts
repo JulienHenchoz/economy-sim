@@ -107,14 +107,23 @@ const esc = (s: string) => s.replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&l
 const REV_LABELS: Record<string, string> = {
   tva: 'TVA', impotRevenu: 'Impôt sur le revenu', impotSocietes: 'Impôt sur les sociétés', impotFortune: 'Impôt sur la fortune',
   succession: 'Successions', loyers: 'Taxe sur les locaux', cotisationsSante: 'Cotisations santé', dividendes: 'Dividendes (parts publiques)', profitsBC: 'Bénéfice de la banque centrale',
+  taxeCarbone: 'Taxe carbone', ventesPubliques: 'Ventes du silo à blé',
 };
 const SPEND_LABELS: Record<string, string> = {
-  salaires: 'Salaires (enseignants)', pensions: 'Pensions', aideSociale: 'Aide sociale', revenuUniversel: 'Revenu universel',
-  remboursementsSante: 'Remboursements de soins', subsidesPrimes: 'Subsides aux primes', achats: 'Achats (cantines, bois, outils)',
+  education: 'Éducation (enseignants, matériel)', administration: 'Administration', securite: 'Police et justice', santePublique: 'Santé publique (prévention)',
+  environnement: 'Environnement (gardes, énergie verte)', pensions: 'Pensions', aideSociale: 'Aide sociale', allocationsFamiliales: 'Allocations familiales',
+  indemnitesMaladie: 'Indemnités maladie et invalidité', chomage: 'Chômage', revenuUniversel: 'Revenu universel',
+  remboursementsSante: 'Remboursements de soins', subsidesPrimes: 'Subsides aux primes', cantines: 'Cantines scolaires',
+  investissement: 'Infrastructures (travaux publics)', logement: 'Logement social', culture: 'Culture et sport', agriculture: 'Agriculture (silo, irrigation)',
   aideUrgence: 'Aide d’urgence', interets: 'Intérêts de la dette', redistribution: 'Dividende public',
 };
-const REV_COLORS = ['#1f6f8b', '#e07a2f', '#805ad5', '#d53f8c', '#718096', '#b7791f', '#e53e3e', '#38a169', '#2d3748'];
-const SPEND_COLORS = ['#319795', '#dd6b20', '#c53030', '#6b46c1', '#e53e3e', '#3182ce', '#38a169', '#ecc94b', '#2d3748', '#a0aec0'];
+const REV_COLORS = ['#1f6f8b', '#e07a2f', '#805ad5', '#d53f8c', '#718096', '#b7791f', '#e53e3e', '#38a169', '#2d3748', '#4a5568', '#d69e2e'];
+const SPEND_COLORS = [
+  '#319795', '#4a5568', '#2c5282', '#f687b3', '#276749',
+  '#dd6b20', '#c53030', '#ed8936', '#9f7aea', '#a0aec0', '#6b46c1',
+  '#e53e3e', '#3182ce', '#38a169', '#975a16', '#b7791f', '#d53f8c', '#d4a72c',
+  '#ecc94b', '#2d3748', '#cbd5e0',
+];
 const HOLDER_LABELS = ['Quintile 1 (plus pauvres)', 'Quintile 2', 'Quintile 3', 'Quintile 4', 'Quintile 5 (plus riches)', 'Entreprises', 'Banque centrale', 'Étranger'];
 const HOLDER_COLORS = ['#c6f6d5', '#9ae6b4', '#68d391', '#38a169', '#22543d', '#805ad5', '#e07a2f', '#c53030'];
 const STATUS_LABEL: Record<string, string> = { enfant: 'Enfant', actif: 'Actif', chomeur: 'Sans emploi', retraite: 'Retraité' };
@@ -286,7 +295,7 @@ const charts: ChartDef[] = [
     },
   },
   {
-    tab: 'apercu', title: 'Où est l’argent ?', desc: 'Répartition de la masse monétaire (fixe) entre ménages, entreprises et État.',
+    tab: 'apercu', title: 'Où est l’argent ?', desc: 'Répartition de la monnaie entre ménages, entreprises et État (la masse totale varie avec la création monétaire).',
     build: (c) => lineChart(c, [
       { label: 'Ménages', color: '#3182ce', fill: true },
       { label: 'Entreprises', color: '#dd6b20', fill: true },
@@ -803,6 +812,110 @@ const charts: ChartDef[] = [
       c.data.datasets[1].data = series((r) => r.forestStock / 60000);
     },
   },
+  // ------------------------------------------------------------------ énergie
+  {
+    tab: 'energie', title: 'Production d’énergie', desc: 'Unités par jour (moyenne 30 jours) selon la source. Le pétrole et le gaz s’épuisent ; l’énergie verte demande des installations (outils).',
+    build: (c) => lineChart(c, [
+      { label: 'Pétrole', color: '#1a202c', fill: true },
+      { label: 'Gaz', color: '#a0aec0', fill: true },
+      { label: 'Énergie verte', color: '#38a169', fill: true },
+    ], { stacked: true, yTitle: 'unités / jour' }),
+    update: (c) => {
+      c.data.datasets[0].data = series((r) => r.energyBySource?.petrole ?? 0, 30);
+      c.data.datasets[1].data = series((r) => r.energyBySource?.gaz ?? 0, 30);
+      c.data.datasets[2].data = series((r) => r.energyBySource?.vert ?? 0, 30);
+    },
+  },
+  {
+    tab: 'energie', title: 'Usages et part verte', desc: 'Énergie consommée par les machines des producteurs (fermes, bateaux, scieries : +25 % de productivité) et pour le chauffage des ménages (gauche) ; part de l’énergie verte dans la production (droite).',
+    build: (c) => lineChart(c, [
+      { label: 'Machines', color: '#dd6b20' },
+      { label: 'Chauffage des ménages', color: '#3182ce' },
+      { label: 'Part verte', color: '#38a169', axis: 'y2', dash: true },
+    ], { yTitle: 'unités / jour', y2Title: 'part verte', y2percent: true }),
+    update: (c) => {
+      c.data.datasets[0].data = series((r) => r.energyUse?.machines ?? 0, 30);
+      c.data.datasets[1].data = series((r) => r.energyUse?.menages ?? 0, 30);
+      c.data.datasets[2].data = series((r) => {
+        const e = r.energyBySource;
+        const t = e ? e.petrole + e.gaz + e.vert : 0;
+        return t > 0 ? e.vert / t : 0;
+      }, 30);
+    },
+  },
+  {
+    tab: 'energie', title: 'Prix de l’énergie et du bois', desc: 'Écus par unité (moyenne 7 jours). Bois et énergie se remplacent pour le chauffage : les ménages achètent surtout le moins cher.',
+    build: (c) => lineChart(c, [
+      { label: 'Énergie (gros)', color: '#dd6b20', dash: true },
+      { label: 'Énergie (détail)', color: '#dd6b20' },
+      { label: 'Bois (détail)', color: '#744210' },
+    ], { yTitle: 'écus' }),
+    update: (c) => {
+      c.data.datasets[0].data = series((r) => r.wholesalePrice.energie ?? 0, 7);
+      c.data.datasets[1].data = series((r) => r.retailPrice.energie ?? 0, 7);
+      c.data.datasets[2].data = series((r) => r.retailPrice.bois ?? 0, 7);
+    },
+  },
+  {
+    tab: 'energie', title: 'Gisements et pollution', desc: 'Pétrole et gaz restants (part du gisement de départ, gauche) ; pollution accumulée rapportée à la référence (droite) : elle rend malade (jusqu’à +100 % de maladies) et freine la repousse des poissons (jusqu’à −30 %).',
+    build: (c) => lineChart(c, [
+      { label: 'Pétrole restant', color: '#1a202c' },
+      { label: 'Gaz restant', color: '#a0aec0' },
+      { label: 'Pollution', color: '#c53030', axis: 'y2' },
+    ], { percent: true, y2Title: '× référence' }),
+    update: (c) => {
+      c.data.datasets[0].data = series((r) => r.oilLeft ?? 1);
+      c.data.datasets[1].data = series((r) => r.gasLeft ?? 1);
+      c.data.datasets[2].data = series((r) => r.pollution ?? 0);
+    },
+  },
+  {
+    tab: 'energie', title: 'Travailleurs de l’énergie', desc: 'Actifs par source : les reconversions suivent les revenus.',
+    build: (c) => lineChart(c, [
+      { label: 'Pétroliers', color: '#1a202c' },
+      { label: 'Gaziers', color: '#a0aec0' },
+      { label: 'Énergie verte', color: '#38a169' },
+    ], { yTitle: 'actifs' }),
+    update: (c) => {
+      c.data.datasets[0].data = series((r) => r.workersByJob.petrolier ?? 0);
+      c.data.datasets[1].data = series((r) => r.workersByJob.gazier ?? 0);
+      c.data.datasets[2].data = series((r) => r.workersByJob.energieVerte ?? 0);
+    },
+  },
+  // ------------------------------------------------------------------ services et équipements publics (onglet État)
+  {
+    tab: 'etat', title: 'Fonctionnaires par fonction', desc: 'Effectifs employés par l’État. Les coupes budgétaires réduisent les postes au prorata.',
+    build: (c) => lineChart(c, (['enseignant', 'administrateur', 'policier', 'infirmier', 'garde', 'cantonnier'] as Job[]).map((j) => ({ label: JOB_DEFS[j].label, color: JOB_DEFS[j].color })), { yTitle: 'agents' }),
+    update: (c) => (['enseignant', 'administrateur', 'policier', 'infirmier', 'garde', 'cantonnier'] as Job[]).forEach((j, i) => (c.data.datasets[i].data = series((r) => r.workersByJob[j] ?? 0))),
+  },
+  {
+    tab: 'etat', title: 'Équipements et services', desc: 'Niveau rapporté à la référence (100 % = réglages par défaut) : infrastructures, matériel scolaire, culture et sport ; part des impôts directs effectivement perçue (administration).',
+    build: (c) => lineChart(c, [
+      { label: 'Infrastructures', color: '#975a16' },
+      { label: 'Matériel scolaire', color: '#319795' },
+      { label: 'Culture et sport', color: '#d53f8c' },
+      { label: 'Impôts perçus', color: '#4a5568', dash: true },
+    ], { percent: true }),
+    update: (c) => {
+      c.data.datasets[0].data = series((r) => r.infraCov ?? 1);
+      c.data.datasets[1].data = series((r) => r.schoolCov ?? 1);
+      c.data.datasets[2].data = series((r) => r.cultureCov ?? 1);
+      c.data.datasets[3].data = series((r) => r.taxEff ?? 1);
+    },
+  },
+  {
+    tab: 'etat', title: 'Silo à blé, irrigation, logement', desc: 'Blé stocké par l’État (gauche) ; capacité supplémentaire des terres grâce à l’irrigation et au défrichement (droite) ; logements sociaux (nombre, gauche).',
+    build: (c) => lineChart(c, [
+      { label: 'Blé en silo', color: '#d4a72c' },
+      { label: 'Logements sociaux', color: '#b7791f', dash: true },
+      { label: 'Terres (+ capacité)', color: '#48bb78', axis: 'y2' },
+    ], { yTitle: 'unités', y2Title: 'capacité des terres', y2percent: true }),
+    update: (c) => {
+      c.data.datasets[0].data = series((r) => r.siloStock ?? 0);
+      c.data.datasets[1].data = series((r) => r.socialHousing ?? 0);
+      c.data.datasets[2].data = series((r) => r.landBonus ?? 0);
+    },
+  },
   {
     tab: 'ressources', title: 'Production', desc: 'Unités produites par jour (moyenne 30 jours).',
     build: (c) => lineChart(c, (['ble', 'poisson', 'lait', 'oeufs', 'fruits', 'bois', 'outils', 'artisanat'] as Good[]).map((g) => ({ label: GOOD_DEFS[g].label, color: GOOD_DEFS[g].color })), { log: true }),
@@ -957,8 +1070,8 @@ const tables: TableDef[] = [
 // ---------------------------------------------------------------------------- vues
 
 const TABS: [string, string][] = [
-  ['ile', 'L’île'], ['apercu', 'Vue d’ensemble'], ['inegalites', 'Inégalités'], ['marches', 'Marchés'], ['emploi', 'Emploi et entreprises'],
-  ['demographie', 'Démographie'], ['sante', 'Santé'], ['etat', 'État'], ['monnaie', 'Monnaie'], ['ressources', 'Ressources'], ['habitants', 'Habitants'], ['modele', 'Le modèle'],
+  ['ile', 'L’île'], ['bilan', 'Bilan'], ['apercu', 'Vue d’ensemble'], ['inegalites', 'Inégalités'], ['marches', 'Marchés'], ['emploi', 'Emploi et entreprises'],
+  ['demographie', 'Démographie'], ['sante', 'Santé'], ['etat', 'État'], ['monnaie', 'Monnaie'], ['energie', 'Énergie'], ['ressources', 'Ressources'], ['habitants', 'Habitants'], ['modele', 'Le modèle'],
 ];
 
 function buildViews() {
@@ -1002,6 +1115,7 @@ function buildViews() {
     v.appendChild(card);
   }
   buildIsland(views.querySelector('.view[data-tab="ile"]') as HTMLElement);
+  buildBilan(views.querySelector('.view[data-tab="bilan"]') as HTMLElement);
   buildCitizens(views.querySelector('.view[data-tab="habitants"]') as HTMLElement);
   buildModel(views.querySelector('.view[data-tab="modele"]') as HTMLElement);
   views.addEventListener('click', (e) => {
@@ -1022,6 +1136,132 @@ function showTab(id: string) {
   if (id === 'habitants') requestCitizens();
   dirty = true;
   render();
+}
+
+
+// ---------------------------------------------------------------------------- bilan qualitatif
+
+/**
+ * Indicateurs de qualité de la société, évalués sur les 12 derniers mois : réussite si la valeur est
+ * du bon côté de `good`, échec au-delà de `bad`, à surveiller entre les deux. `target` : on juge
+ * l'écart à cette cible (inflation).
+ */
+interface QualityDef {
+  group: string;
+  label: string;
+  help: string;
+  fmt: (x: number) => string;
+  value: (rows: DayStats[]) => number;
+  good: number;
+  bad: number;
+  higherBetter?: boolean;
+  target?: number;
+}
+const sum = (rows: DayStats[], f: (r: DayStats) => number) => rows.reduce((s, r) => s + f(r), 0);
+const mean = (rows: DayStats[], f: (r: DayStats) => number) => (rows.length ? sum(rows, f) / rows.length : 0);
+const lastOf = (rows: DayStats[]) => rows[rows.length - 1];
+const perYear = (rows: DayStats[]) => 360 / Math.max(1, rows.length);
+const QUALITY: QualityDef[] = [
+  { group: 'Vivre', label: 'Faim', help: 'Part des habitants nourris à moins de 90 % de leur besoin.', fmt: (x) => pct(x, 1), value: (r) => mean(r, (x) => x.hungerRate), good: 0.01, bad: 0.05 },
+  { group: 'Vivre', label: 'Décès de faim', help: 'Pour 1000 habitants et par an.', fmt: (x) => `${fmt(x, 1)} ‰`, value: (r) => (sum(r, (x) => x.deaths.faim) * perYear(r) * 1000) / Math.max(1, lastOf(r).population), good: 0.5, bad: 5 },
+  { group: 'Vivre', label: 'Âge moyen au décès', help: 'Approche de l’espérance de vie (dépend aussi de la pyramide des âges).', fmt: (x) => `${fmt(x, 0)} ans`, value: (r) => sum(r, (x) => x.deathAges ?? 0) / Math.max(1, sum(r, (x) => x.deaths.age + x.deaths.faim + x.deaths.maladie)), good: 70, bad: 55, higherBetter: true },
+  { group: 'Vivre', label: 'Mortalité infantile', help: 'Décès avant 1 an pour 1000 naissances.', fmt: (x) => `${fmt(x, 0)} ‰`, value: (r) => (sum(r, (x) => x.infantDeaths ?? 0) * 1000) / Math.max(1, sum(r, (x) => x.births)), good: 10, bad: 40 },
+  { group: 'Vivre', label: 'Santé moyenne', help: 'Sur 100.', fmt: (x) => fmt(x, 0), value: (r) => mean(r, (x) => x.avgHealth), good: 90, bad: 75, higherBetter: true },
+  { group: 'Vivre', label: 'Soins non reçus', help: 'Part des journées de soin demandées qui n’ont pas eu lieu (trop cher ou pas de médecin).', fmt: (x) => pct(x, 1), value: (r) => sum(r, (x) => x.careDenied + x.careNoDoctor) / Math.max(1, sum(r, (x) => x.careActs + x.careDenied + x.careNoDoctor)), good: 0.05, bad: 0.2 },
+  { group: 'Savoir', label: 'Éducation des adultes', help: 'Niveau moyen (0 à 1) : il fait la productivité et l’accès aux métiers qualifiés.', fmt: (x) => fmt(x, 2), value: (r) => lastOf(r).avgEduAdults, good: 0.55, bad: 0.4, higherBetter: true },
+  { group: 'Savoir', label: 'Élèves avec un enseignant', help: 'Part des enfants d’âge scolaire qui ont une place en classe (25 par enseignant).', fmt: (x) => pct(x), value: (r) => mean(r, (x) => x.staffCov?.ecoles ?? 1), good: 0.95, bad: 0.7, higherBetter: true },
+  { group: 'Équité', label: 'Inégalités de patrimoine', help: 'Gini des adultes (0 = égalité parfaite).', fmt: (x) => fmt(x, 2), value: (r) => mean(r, (x) => x.giniWealth), good: 0.35, bad: 0.5 },
+  { group: 'Équité', label: 'Inégalités de revenus', help: 'Gini des revenus du mois des adultes.', fmt: (x) => fmt(x, 2), value: (r) => mean(r, (x) => x.giniIncome), good: 0.3, bad: 0.45 },
+  { group: 'Équité', label: 'Pauvreté', help: 'Part des foyers dont l’épargne est sous le seuil de l’aide sociale.', fmt: (x) => pct(x, 1), value: (r) => mean(r, (x) => x.poorRate ?? 0), good: 0.05, bad: 0.15 },
+  { group: 'Équité', label: 'Écart de revenus', help: 'Revenu du 90e centile / 10e centile des actifs.', fmt: (x) => `× ${fmt(x, 1)}`, value: (r) => mean(r, (x) => x.p90p10), good: 3, bad: 6 },
+  { group: 'Travail et prix', label: 'Chômage', help: 'Sans emploi / population active.', fmt: (x) => pct(x, 1), value: (r) => mean(r, (x) => x.chomeurs / Math.max(1, x.actifs + x.chomeurs)), good: 0.05, bad: 0.12 },
+  { group: 'Travail et prix', label: 'Inflation', help: 'Prix moyens des 90 derniers jours / mêmes jours un an plus tôt (IPC chaîné). Jugée sur l’écart à 2 %.', fmt: (x) => pct(x, 1), value: (r) => inflationAt(r[r.length - 1].day), good: 0.05, bad: 0.15, target: 0.02 },
+  { group: 'Travail et prix', label: 'Croissance de la population', help: 'Variation sur 12 mois.', fmt: (x) => pct(x, 1), value: (r) => lastOf(r).population / Math.max(1, r[0].population) - 1, good: 0, bad: -0.05, higherBetter: true },
+  { group: 'Cohésion', label: 'Vols', help: 'Vols de nourriture par des foyers affamés, pour 1000 habitants et par an.', fmt: (x) => `${fmt(x, 1)} ‰`, value: (r) => (sum(r, (x) => x.thefts ?? 0) * perYear(r) * 1000) / Math.max(1, lastOf(r).population), good: 2, bad: 20 },
+  { group: 'Cohésion', label: 'Froid', help: 'Part des habitants mal chauffés.', fmt: (x) => pct(x, 1), value: (r) => mean(r, (x) => x.coldRate ?? 0), good: 0.02, bad: 0.1 },
+  { group: 'Finances publiques', label: 'Déficit public', help: 'Sur 12 mois, en part du PIB (négatif = excédent).', fmt: (x) => pct(x, 1), value: (r) => lastOf(r).deficitRatio ?? 0, good: 0.03, bad: 0.06 },
+  { group: 'Finances publiques', label: 'Dette publique', help: 'En part du PIB annuel.', fmt: (x) => pct(x), value: (r) => lastOf(r).debtRatio ?? 0, good: 0.3, bad: 0.6 },
+  { group: 'Finances publiques', label: 'Taux de la dette', help: 'Taux moyen des obligations en circulation.', fmt: (x) => pct(x, 1), value: (r) => lastOf(r).avgRate ?? 0, good: 0.04, bad: 0.08 },
+  { group: 'Environnement', label: 'Pollution', help: 'Pollution accumulée rapportée à la référence (1 = maladies +50 %, poissons −30 %).', fmt: (x) => `× ${fmt(x, 2)}`, value: (r) => lastOf(r).pollution ?? 0, good: 0.5, bad: 1.2 },
+  { group: 'Environnement', label: 'Énergie verte', help: 'Part de l’énergie produite sans émissions.', fmt: (x) => pct(x), value: (r) => sum(r, (x) => x.energyBySource?.vert ?? 0) / Math.max(1, sum(r, (x) => (x.energyBySource ? x.energyBySource.petrole + x.energyBySource.gaz + x.energyBySource.vert : 0))), good: 0.4, bad: 0.1, higherBetter: true },
+  { group: 'Environnement', label: 'Poissons', help: 'Stock en part de la capacité (sous 50 %, les prises baissent).', fmt: (x) => pct(x), value: (r) => lastOf(r).fishStock / 24000, good: 0.5, bad: 0.3, higherBetter: true },
+  { group: 'Environnement', label: 'Forêt', help: 'Stock en part de la capacité.', fmt: (x) => pct(x), value: (r) => lastOf(r).forestStock / 60000, good: 0.5, bad: 0.3, higherBetter: true },
+];
+/** Inflation sur un an à un jour donné : IPC moyen des 90 jours précédents / mêmes jours un an plus tôt. */
+function inflationAt(day: number): number {
+  const i = history.findIndex((r) => r.day === day);
+  if (i < 450) return NaN;
+  const avg = (a: number, b: number) => mean(history.slice(a, b), (r) => r.cpi);
+  return avg(i - 89, i + 1) / avg(i - 449, i - 359) - 1;
+}
+type QStatus = 'ok' | 'warn' | 'fail';
+function qualityStatus(d: QualityDef, x: number): QStatus {
+  if (!Number.isFinite(x)) return 'warn';
+  const v = d.target !== undefined ? Math.abs(x - d.target) : x;
+  if (d.higherBetter) return v >= d.good ? 'ok' : v <= d.bad ? 'fail' : 'warn';
+  return v <= d.good ? 'ok' : v >= d.bad ? 'fail' : 'warn';
+}
+const Q_LABEL: Record<QStatus, string> = { ok: 'Réussite', warn: 'À surveiller', fail: 'Échec' };
+/** Mini-courbe : valeur mois par mois (fenêtre glissante de 90 jours), 6 dernières années au plus. */
+function sparkline(d: QualityDef): string {
+  const pts: number[] = [];
+  const n = history.length;
+  for (let end = Math.max(30, n - 6 * 360); end <= n; end += 30) {
+    const rows = history.slice(Math.max(0, end - 90), end);
+    if (rows.length) pts.push(d.value(rows));
+  }
+  const ok = pts.filter((x) => Number.isFinite(x));
+  if (ok.length < 2) return '';
+  const lo = Math.min(...ok, d.target ?? Infinity), hi = Math.max(...ok, d.target ?? -Infinity);
+  const span = hi - lo || 1;
+  const path = pts.map((x, i) => `${((i / (pts.length - 1)) * 100).toFixed(1)},${(28 - ((Number.isFinite(x) ? x : lo) - lo) / span * 26).toFixed(1)}`).join(' ');
+  return `<svg viewBox="0 0 100 30" preserveAspectRatio="none" class="spark"><polyline points="${path}" /></svg>`;
+}
+function buildBilan(v: HTMLElement) {
+  v.classList.add('bilan');
+  v.innerHTML = `<div class="card wide bilan-head" id="bilanHead"></div>`;
+  const groups = [...new Set(QUALITY.map((d) => d.group))];
+  for (const g of groups) {
+    const card = document.createElement('div');
+    card.className = 'card wide';
+    card.innerHTML = `<h3>${g}</h3><div class="qgrid">${QUALITY.map((d, i) => (d.group === g ? `<div class="q" id="q${i}"></div>` : '')).join('')}</div>`;
+    v.appendChild(card);
+  }
+}
+function renderBilan() {
+  const head = $('bilanHead');
+  if (!head) return;
+  if (history.length < 30) {
+    head.innerHTML = '<h3>Bilan de la société</h3><p class="desc">Lancez la simulation : le bilan porte sur les 12 derniers mois.</p>';
+    return;
+  }
+  const rows = history.slice(-360);
+  const prev = history.length >= 720 ? history.slice(-720, -360) : null;
+  const count: Record<QStatus, number> = { ok: 0, warn: 0, fail: 0 };
+  QUALITY.forEach((d, i) => {
+    const x = d.value(rows);
+    const st = qualityStatus(d, x);
+    count[st]++;
+    let trend = '';
+    if (prev) {
+      const y = d.value(prev);
+      const a = d.target !== undefined ? Math.abs(x - d.target) : x;
+      const b = d.target !== undefined ? Math.abs(y - d.target) : y;
+      const better = d.higherBetter ? a > b : a < b;
+      const rel = Math.abs(a - b) / Math.max(1e-9, Math.abs(b), Math.abs(d.good) * 0.1, 1e-3);
+      trend = rel < 0.05 ? '<span class="trend">→ stable</span>' : `<span class="trend ${better ? 'up' : 'down'}">${better ? '▲ mieux' : '▼ moins bien'}</span>`;
+    }
+    const el = $(`q${i}`);
+    el.className = `q ${st}`;
+    el.title = `${d.help} Réussite : ${d.higherBetter ? '≥' : '≤'} ${d.fmt(d.target !== undefined ? d.target + d.good : d.good)} ; échec : ${d.higherBetter ? '≤' : '≥'} ${d.fmt(d.target !== undefined ? d.target + d.bad : d.bad)}.`;
+    el.innerHTML = `<div class="qtop"><span class="qlabel">${d.label}</span><span class="badge">${Q_LABEL[st]}</span></div><div class="qval">${d.fmt(x)}</div>${sparkline(d)}<div class="qsub">${trend}</div>`;
+  });
+  const total = QUALITY.length;
+  const score = (count.ok + 0.5 * count.warn) / total;
+  head.innerHTML = `<h3>Bilan de la société <span class="muted">— 12 derniers mois${prev ? ', tendance par rapport à l’année précédente' : ''}</span></h3>
+    <div class="score"><div class="bar"><i class="ok" style="width:${(count.ok / total) * 100}%"></i><i class="warn" style="width:${(count.warn / total) * 100}%"></i><i class="fail" style="width:${(count.fail / total) * 100}%"></i></div>
+    <div class="legend"><b>${Math.round(score * 100)} / 100</b> · <span class="ok">${count.ok} réussites</span> · <span class="warn">${count.warn} à surveiller</span> · <span class="fail">${count.fail} échecs</span></div></div>
+    <p class="desc">Chaque indicateur est jugé sur des seuils fixes (survolez une case pour les voir). La courbe montre son évolution mois par mois.</p>`;
 }
 
 // ---------------------------------------------------------------------------- l'île (carte + gazette)
@@ -1283,7 +1523,30 @@ const POLICY_GROUPS: [string, SliderDef[]][] = [
     { key: 'ubi', label: 'Revenu universel', min: 0, max: 10, step: 0.25, fmt: (v) => `${fmt(v, 2)} é/j`, help: 'Versé chaque jour à chaque adulte.' },
     { key: 'socialAidThreshold', label: 'Seuil de l’aide sociale', min: 0, max: 30, step: 1, fmt: (v) => `${v} é/pers.`, help: 'Un foyer dont l’épargne passe sous ce seuil (par membre) reçoit l’aide.' },
     { key: 'socialAidAmount', label: 'Montant de l’aide sociale', min: 0, max: 10, step: 0.25, fmt: (v) => `${fmt(v, 2)} é/j/pers.` },
-    { key: 'schoolMeals', label: 'Cantines scolaires', min: 0, max: 0.7, step: 0.05, fmt: (v) => (v ? `${fmt(v, 2)} / enfant / j` : 'aucune'), help: 'Nutrition fournie chaque jour à chaque enfant (pain et fruits achetés en gros par l’État). S’y ajoutent le bois pour chauffer l’école et des outils pour l’entretien.' },
+  ]],
+  ['Services publics', [
+    { key: 'adminPer1000', label: 'Administration (pour 1000 hab.)', min: 0, max: 25, step: 0.5, fmt: (v) => `${fmt(v, 1)}`, help: 'Perception des impôts : à 8 ‰ tout est perçu ; sans agents, 20 % des impôts directs échappent au fisc.' },
+    { key: 'policePer1000', label: 'Police et justice (pour 1000 hab.)', min: 0, max: 15, step: 0.5, fmt: (v) => `${fmt(v, 1)}`, help: 'Un foyer affamé et sans argent peut voler de la nourriture dans un commerce (un tiers du butin est gâché). La police dissuade, l’aide sociale aussi.' },
+    { key: 'nursesPer1000', label: 'Santé publique (pour 1000 hab.)', min: 0, max: 20, step: 0.5, fmt: (v) => `${fmt(v, 1)}`, help: 'Infirmiers de prévention : ±15 % de maladies autour du niveau de référence (5 ‰).' },
+    { key: 'rangersPer1000', label: 'Gardes nature (pour 1000 hab.)', min: 0, max: 8, step: 0.5, fmt: (v) => `${fmt(v, 1)}`, help: 'Gestion des forêts et des eaux : ±15 % de repousse autour de la référence (1,5 ‰).' },
+    { key: 'schoolMeals', label: 'Cantines scolaires', min: 0, max: 0.7, step: 0.05, fmt: (v) => (v ? `${fmt(v, 2)} / enfant / j` : 'aucune'), help: 'Nutrition fournie chaque jour à chaque enfant (pain et fruits achetés en gros par l’État).' },
+    { key: 'schoolSupplies', label: 'Matériel scolaire', min: 0, max: 40, step: 1, fmt: (v) => (v ? `${v} é/élève/an` : 'aucun'), help: 'Livres et fournitures (artisanat) : ±15 % de progrès scolaire autour du niveau par défaut. Le chauffage des écoles (bois) est compté avec l’éducation.' },
+  ]],
+  ['Transferts sociaux', [
+    { key: 'familyAllowance', label: 'Allocations familiales', min: 0, max: 3, step: 0.1, fmt: (v) => (v ? `${fmt(v, 1)} é/j/enfant` : 'aucune') },
+    { key: 'sickPay', label: 'Indemnités maladie et invalidité', min: 0, max: 8, step: 0.25, fmt: (v) => (v ? `${fmt(v, 2)} é/j` : 'aucune'), help: 'Versées chaque jour aux actifs malades (hors fonctionnaires) et aux personnes en âge de travailler dont la santé est très dégradée.' },
+    { key: 'unemploymentBenefit', label: 'Allocation de chômage', min: 0, max: 8, step: 0.25, fmt: (v) => (v ? `${fmt(v, 2)} é/j` : 'aucune') },
+  ]],
+  ['Investissements et équipements', [
+    { key: 'publicInvestment', label: 'Infrastructures', min: 0, max: 0.1, step: 0.005, fmt: (v) => (v ? `${pctF(v)} du PIB` : 'aucune'), help: 'Routes, port, réseaux : moitié travaux publics (cantonniers), moitié bois et outils. Elles s’usent en 20 ans ; leur niveau joue sur la productivité de tous (±10 %).' },
+    { key: 'socialHousing', label: 'Logement social', min: 0, max: 0.5, step: 0.05, fmt: (v) => (v ? `${pctF(v)} des foyers` : 'aucun'), help: 'Logements isolés construits en bois et outils, attribués aux foyers les plus modestes : moitié moins de chauffage.' },
+    { key: 'culture', label: 'Culture et sport', min: 0, max: 40, step: 1, fmt: (v) => (v ? `${v} é/hab./an` : 'aucun'), help: 'Achats d’artisanat (salles, équipements, spectacles) : un peu de santé en plus pour tous.' },
+    { key: 'landImprovement', label: 'Irrigation et défrichement', min: 0, max: 0.03, step: 0.001, fmt: (v) => (v ? `${pctF(v)} du PIB` : 'aucun'), help: 'Outils achetés pour aménager les terres : les champs, pâturages et vergers accueillent plus de travailleurs avant que les rendements ne baissent. S’use en 30 ans.' },
+    { key: 'grainFloor', label: 'Silo à blé : prix plancher', min: 0.2, max: 1.2, step: 0.05, fmt: (v) => `${pctF(v)} de la valeur du travail`, help: 'L’État achète le blé quand il tombe sous ce prix (jusqu’à 60 jours de consommation, conservé un an) et le revend au-dessus de 150 %. Amortit le cycle du blé.' },
+  ]],
+  ['Énergie et environnement', [
+    { key: 'carbonTax', label: 'Taxe carbone', min: 0, max: 3, step: 0.05, fmt: (v) => (v ? `${fmt(v, 2)} é/unité émise` : 'aucune'), help: 'Payée par les pétroliers (1 unité émise par unité d’énergie) et les gaziers (0,55). Rend l’énergie verte compétitive.' },
+    { key: 'greenSubsidy', label: 'Subvention à l’énergie verte', min: 0, max: 1, step: 0.05, fmt: (v) => (v ? `${fmt(v, 2)} é/unité` : 'aucune') },
   ]],
   ['Budget et dette', [
     { key: 'deficitTarget', label: 'Déficit maximal', min: 0, max: 0.12, step: 0.005, fmt: pctF, help: 'Pour la règle « Déficit plafonné » : déficit permis chaque année, en part du PIB.' },
@@ -1346,10 +1609,13 @@ function buildSidebar() {
     if (group === 'Dépenses publiques') {
       html += `<label class="check"><input type="checkbox" id="s_indexation" /> <span>Indexation sur les prix<br><span class="help" style="color:var(--muted);font-size:11.5px">Pensions, aides, salaires publics et minimum suivent l’IPC.</span></span></label>`;
     }
+    if (group === 'Investissements et équipements') {
+      html += `<label class="check"><input type="checkbox" id="s_grainReserve" /> <span>Silo public à blé<br><span class="help" style="color:var(--muted);font-size:11.5px">Désactivé, le stock existant est revendu.</span></span></label>`;
+    }
     if (group === 'Budget et dette') {
       html = html.replace(`<h2>${group}</h2>`, `<h2>${group}</h2><div class="slider"><div class="row"><span class="name">Règle budgétaire</span></div>
         <select id="s_fiscalRule">${(Object.keys(FISCAL_RULES) as FiscalRule[]).map((k) => `<option value="${k}">${FISCAL_RULES[k]}</option>`).join('')}</select>
-        <div class="help">Chaque début d’année, l’État chiffre ses besoins et prévoit ses recettes (12 derniers mois). <b>Équilibre</b> : pas de déficit. <b>Déficit plafonné</b> : déficit jusqu’au maximum ci-dessous. <b>Frein à l’endettement</b> (à la suisse) : équilibre sur le cycle, déficit permis quand le PIB est sous sa tendance, excédent exigé au-dessus. L’État dépense ses recettes plus le déficit permis, réparti au prorata des besoins : moins que les besoins → coupes ; plus → pensions, aides, soins, achats et postes relevés (jusqu’à +30 %). Changement de 15 points au plus par an. Le déficit est emprunté aux enchères.</div></div>`);
+        <div class="help">Chaque début d’année, l’État chiffre ses besoins et prévoit ses recettes (12 derniers mois). <b>Équilibre</b> : pas de déficit. <b>Déficit plafonné</b> : déficit jusqu’au maximum ci-dessous. <b>Frein à l’endettement</b> (à la suisse) : équilibre sur le cycle, déficit permis quand le PIB est sous sa tendance, excédent exigé au-dessus. L’État dépense ses recettes plus le déficit permis, réparti au prorata des besoins : moins que les besoins → coupes ; plus → pensions, aides, soins, achats et postes relevés (jusqu’à +60 %). Ajustement de 10 points au vote annuel, 5 à chaque budget rectificatif trimestriel. Le déficit est emprunté aux enchères.</div></div>`);
     }
     if (group === 'Santé : assurance privée') {
       html += `<label class="check"><input type="checkbox" id="s_insuranceMandatory" /> <span>Assurance obligatoire<br><span class="help" style="color:var(--muted);font-size:11.5px">Chaque foyer prend le contrat le moins cher. Sinon, on s’assure si la prime vaut le risque perçu.</span></span></label>`;
@@ -1376,6 +1642,10 @@ function buildSidebar() {
     policy.insuranceMandatory = (e.target as HTMLInputElement).checked;
     pushPolicy(true);
   });
+  ($('s_grainReserve') as HTMLInputElement).addEventListener('change', (e) => {
+    policy.grainReserve = (e.target as HTMLInputElement).checked;
+    pushPolicy(true);
+  });
   ($('s_fiscalRule') as HTMLSelectElement).addEventListener('change', (e) => {
     policy.fiscalRule = (e.target as HTMLSelectElement).value as FiscalRule;
     pushPolicy(true);
@@ -1399,6 +1669,7 @@ function syncSidebar() {
   }
   ($('s_indexation') as HTMLInputElement).checked = policy.indexation;
   ($('s_insuranceMandatory') as HTMLInputElement).checked = policy.insuranceMandatory;
+  ($('s_grainReserve') as HTMLInputElement).checked = policy.grainReserve;
   ($('s_fiscalRule') as HTMLSelectElement).value = policy.fiscalRule;
 }
 
@@ -1415,6 +1686,7 @@ function policyDiff(): string {
   if (policy.indexation !== sentPolicy.indexation) out.push(`indexation ${policy.indexation ? 'activée' : 'désactivée'}`);
   if (policy.insuranceMandatory !== sentPolicy.insuranceMandatory) out.push(`assurance ${policy.insuranceMandatory ? 'obligatoire' : 'facultative'}`);
   if (policy.fiscalRule !== sentPolicy.fiscalRule) out.push(`règle budgétaire : ${FISCAL_RULES[policy.fiscalRule]}`);
+  if (policy.grainReserve !== sentPolicy.grainReserve) out.push(`silo à blé ${policy.grainReserve ? 'activé' : 'désactivé'}`);
   return out.join(' ; ');
 }
 /**
@@ -1490,6 +1762,7 @@ function render() {
   renderTimeline();
   renderKpis();
   if (currentTab === 'ile') renderGazette();
+  if (currentTab === 'bilan') renderBilan();
   if (!history.length) return;
   for (const def of charts) {
     if (def.tab !== currentTab || !def.chart) continue;
@@ -1699,7 +1972,11 @@ function buildModel(v: HTMLElement) {
   <p>La facture est partagée : la <b>sécurité sociale</b> paie un pourcentage d’un tarif de référence (financée par une cotisation sur tous les revenus), et peut prendre en charge les honoraires des foyers modestes ; l’<b>assureur</b> du foyer paie une part de ce qui reste ; le foyer paie le solde. Pour une maladie, il accepte d’y consacrer une grosse part de son épargne ; pour un suivi, seulement une petite part de ce qui dépasse son épargne de précaution. Sinon il <b>renonce aux soins</b>.</p>
   <p>Les <b>assureurs</b> fixent une prime par unité de risque (un adulte de 40 à 59 ans = 1 ; un enfant 0,5, un jeune adulte 0,6, 60–74 ans 2,2, 75 ans et plus 3,5 ; la réglementation peut écraser ces écarts). Leur prime couvre les sinistres attendus (statistiques de la population, puis leur propre expérience), leurs frais (un assureur gère environ 1000 personnes) et une marge, qui monte quand ils sont pleins et baisse quand ils perdent des clients. Ils gardent deux mois de sinistres en réserve. Chaque mois, un foyer sur quatre réexamine son contrat : il s’assure si la prime ne dépasse pas ce qu’il espère se faire rembourser, majoré de son aversion au risque (plus forte s’il est pauvre face à une maladie grave), et s’il peut la payer. Il connaît son risque mieux que l’assureur : avec une prime unique, les jeunes en bonne santé partent, les primes montent, d’autres partent… c’est l’<b>antisélection</b>. L’assurance obligatoire l’empêche ; le subside rend la prime abordable aux revenus modestes.</p>
   <h3>L’État</h3>
-  <p>Il prélève impôt sur le revenu (deux tranches, mensuel), cotisation santé, TVA, impôt sur les sociétés, impôt sur la fortune, droits de succession et taxe sur les locaux. Il paie les enseignants, les pensions, l’aide sociale et le revenu universel, dans cet ordre de priorité ; s’il manque d’argent, il paie au prorata. Les remboursements de soins et les subsides aux primes sont payés au fil de l’eau, tant que la caisse le permet. Il achète aussi en gros, comme une entreprise : pain et fruits pour les cantines (distribués aux foyers avec enfants), bois pour l’école, outils pour l’entretien.</p>
+  <p>Il prélève impôt sur le revenu (deux tranches, mensuel), cotisation santé, TVA, impôt sur les sociétés, impôt sur la fortune, droits de succession et taxe sur les locaux. Il paie ses fonctionnaires, les pensions, l’aide sociale, les allocations familiales, les indemnités maladie et invalidité, le chômage et le revenu universel ; s’il manque d’argent, il paie au prorata (et emprunte en cours de mois pour l’éviter). Les remboursements de soins et les subsides aux primes sont payés au fil de l’eau. Il achète aussi en gros, comme une entreprise : pain et fruits pour les cantines (distribués aux foyers avec enfants), bois et matériel pour les écoles, bois et outils pour les infrastructures, les logements sociaux et l’irrigation, artisanat pour la culture et le sport.</p>
+  <p><b>Les services publics.</b> Chaque fonction a un effet dans le modèle, neutre à l’effectif de référence et sensible quand on s’en écarte : les <b>administrateurs</b> perçoivent les impôts (sans eux, 20 % des impôts directs échappent au fisc) ; la <b>police et la justice</b> dissuadent les vols de nourriture des foyers affamés ; les <b>infirmiers</b> de prévention font baisser les maladies (±15 %) ; les <b>gardes nature</b> font repousser forêts et poissons (±15 %) ; les <b>travaux publics</b> et les achats de matériaux entretiennent des <b>infrastructures</b> qui s’usent en 20 ans et jouent sur la productivité de tous (±10 %). Les <b>logements sociaux</b>, attribués aux foyers les plus modestes, divisent par deux leurs besoins de chauffage ; le <b>matériel scolaire</b> accélère les progrès des élèves ; la <b>culture et le sport</b> améliorent un peu la santé ; l’<b>irrigation et le défrichement</b> permettent aux terres d’accueillir plus de travailleurs avant que les rendements ne baissent. Le <b>silo à blé</b> achète quand le prix tombe sous un plancher (une part de la valeur du travail d’un céréalier) et revend au-dessus de 150 % : il amortit le cycle du blé.</p>
+  <p><b>L’indice des prix</b> est chaîné : chaque jour, la variation des prix de détail est pondérée par ce que les ménages achètent vraiment (moyenne sur 30 jours). Un bien devenu rare et cher, que plus personne n’achète, pèse donc de moins en moins. Avec un panier fixe, l’IPC s’envolait dans ces cas-là et l’indexation faisait exploser pensions et aides.</p>
+  <h3>L’énergie</h3>
+  <p>Un même bien, l’<b>énergie</b>, vient de trois sources. Les <b>pétroliers</b> et les <b>gaziers</b> exploitent des gisements finis : le rendement baisse à mesure qu’ils s’épuisent, et chaque unité émet de la pollution (1 pour le pétrole, 0,55 pour le gaz). L’<b>énergie verte</b> (éoliennes, panneaux) n’émet rien et ne s’épuise pas, mais ne produit presque rien sans installations (outils). L’énergie sert au <b>chauffage</b> des ménages, qui la mettent en balance avec le bois (ils achètent surtout le moins cher), et aux <b>machines</b> des producteurs : tracteurs, bateaux à moteur, scies (+25 % de productivité tant qu’elles sont alimentées). La <b>pollution</b> s’accumule et se résorbe lentement ; elle rend malade et freine la repousse des poissons. La <b>taxe carbone</b> renchérit le pétrole et le gaz ; la <b>subvention verte</b> aide les producteurs propres.</p>
   <p><b>Le budget.</b> Chaque début d’année, l’État chiffre ses besoins (effectifs × montants pour les pensions et les salaires, douze derniers mois pour les aides et les soins, achats que le marché a pu fournir, intérêts de la dette) et prévoit ses recettes (moyenne des douze derniers mois). La <b>règle budgétaire</b> fixe le déficit permis : aucun (équilibre), un pourcentage du PIB (déficit plafonné), ou un déficit qui dépend de la conjoncture (frein à l’endettement : on peut s’endetter quand le PIB est sous sa tendance, on rembourse au-dessus). Un plafond de dette resserre la règle à son approche. L’État dépense ses recettes prévues plus le déficit permis : si c’est moins que les besoins, toutes les enveloppes sont réduites au prorata (pensions, aides, remboursements, achats, postes d’enseignants) ; si c’est plus, elles sont relevées au prorata (jusqu’à 160 % des besoins). L’ajustement est étalé (10 points au plus au vote annuel, 5 à chaque budget rectificatif trimestriel) ; les intérêts, eux, sont toujours dus. Sans dette, l’État ne thésaurise pas : une trésorerie au-delà de deux mois de dépenses est remise en circulation l’année suivante. Après une catastrophe, l’aide d’urgence est empruntée hors règle.</p>
   <p><b>La dette.</b> Chaque mois, l’État rembourse les obligations échues et emprunte de quoi tenir le mois suivant (quelques semaines de dépenses en caisse). Il émet des obligations à un an, coupon mensuel, par <b>enchère</b> : les foyers qui ont de l’épargne au-delà d’un mois de dépenses, et les entreprises qui ont de la trésorerie oisive, proposent une somme et un taux. Plus leur patrimoine est déjà placé en obligations, plus ils exigent un taux élevé ; tous exigent une prime de risque qui grimpe avec la dette / PIB et après une crise. Le taux retenu est celui du dernier prêteur servi. Si l’épargne ne suffit pas, l’enchère échoue : l’État ne crée pas de monnaie, il ne paie pas tout.</p>
   <p><b>Qui finance un déficit ?</b> Chaque écu dépensé par l’État au-delà de ses impôts vient d’un ménage ou d’une entreprise qui le lui a prêté, de la banque centrale qui crée la monnaie pour l’acheter, ou de l’étranger. Sans banque centrale ni étranger, le déficit public est exactement l’épargne placée par le privé (graphique « Soldes des secteurs » : la somme est toujours nulle). On voit alors : un <b>transfert vers les riches</b>, car ce sont eux qui ont de l’épargne à placer et qui touchent les intérêts (graphique « Qui détient la dette ? ») ; un <b>effet d’éviction</b>, car l’argent prêté à l’État n’achète plus rien d’autre et les taux montent quand l’épargne disponible s’épuise ; et la possibilité d’une <b>spirale</b> : plus de dette → prime de risque plus haute → plus d’intérêts → plus de déficit, jusqu’à l’enchère ratée et aux coupes forcées. À l’inverse, un État durablement excédentaire et sans dette thésaurise de la monnaie et fait baisser les prix : le « dividende public » (désactivé par défaut) reverse alors l’excédent aux habitants.</p>

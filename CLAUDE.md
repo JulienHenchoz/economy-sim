@@ -18,6 +18,8 @@ les inégalités et l'effet des politiques publiques. Projet perso de Julien, se
   l'historique (structuredClone + prototypes). Instantané mensuel sur la dernière année, annuel au-delà
   (3 à 5 Mo chacun). Branches = simulations vivantes indépendantes qui partagent les instantanés
   antérieurs au point de départ. Restauration déterministe vérifiée par `scripts/restore.ts`.
+- Onglet « Bilan » (`QUALITY` dans `main.ts`) : 24 indicateurs sur 12 mois, seuils réussite/échec fixes,
+  tendance et mini-courbe ; onglet « Énergie ».
 - `src/ui/map.ts` : carte Canvas animée (zones par métier, habitants colorés par quintile de patrimoine,
   pièces = flux d'argent du jour, alimentée par `Simulation.mapState()`). Gazette : `Simulation.news`.
 - `src/main.ts` + `src/style.css` + `index.html` : interface (curseurs de politique, onglets, Chart.js +
@@ -30,7 +32,7 @@ les inégalités et l'effet des politiques publiques. Projet perso de Julien, se
   étranger créent ou détruisent de la monnaie, mais chaque mouvement passe par `mint()` ;
   `moneyError` = total − `moneyBase` (initiale + création nette) doit rester à 0. `scripts/headless.ts`
   s'arrête sinon ; l'UI l'affiche (KPI « Masse monétaire », « comptes justes »).
-- Chaîne : producteurs (blé, poisson, lait+bétail, œufs, fruits, bois) → transformateurs (boulanger,
+- Chaîne : producteurs (blé, poisson, lait+bétail, œufs, fruits, bois, énergie) → transformateurs (boulanger,
   poissonnier, boucher, fromager, charpentier → outils, artisan → artisanat) → commerçants (seuls à vendre
   aux ménages, capacité limitée, taxe sur les locaux) → ménages. Enseignants payés par l'État ; médecins
   libéraux et assureurs santé (voir ci-dessous).
@@ -40,9 +42,23 @@ les inégalités et l'effet des politiques publiques. Projet perso de Julien, se
 - Entreprises : tout le monde démarre indépendant ; recrutement, fusion d'indépendants en difficulté
   (**patron = plus gros apport en capital**, parts au prorata), salaires = 70 % de la VA par travailleur.
 - Reconversions étalées (1/30 des actifs par jour), attrait d'un métier plafonné à 3× le revenu moyen.
-- État : impôts (revenu à deux tranches, TVA, sociétés, fortune, succession, locaux), dépenses (fonction
-  publique, pensions, aide sociale par membre du foyer, revenu universel, achats publics : cantines, bois,
-  outils ; aide d'urgence après catastrophe), indexation sur l'IPC du mois. Dividende public au-delà de
+- Énergie (bien `energie`, depuis le 2026-11-09) : pétroliers et gaziers (gisements finis `oilReserve`,
+  `gasReserve`, émissions `EMISSIONS`), énergie verte (sans outils ≈ rien). Usages : chauffage des ménages
+  (bois ou énergie, part ∝ prix^-3) et machines des producteurs `MECHANIZED` (+25 % tant qu'alimentées,
+  carburant non revendu). Pollution (stock, résorption 1/720 j) : maladies jusqu'à ×2, poissons −30 %.
+  Taxe carbone (recette `taxeCarbone`), subvention verte (poste `environnement`).
+- IPC **chaîné** (`updateCpi`) : variations quotidiennes pondérées par les dépenses des ménages (30 j).
+- État : impôts (revenu à deux tranches, TVA, sociétés, fortune, succession, locaux, carbone), dépenses par
+  fonction (`SPEND_KEYS` : éducation, administration, police, santé publique, environnement, pensions, aide
+  sociale, allocations familiales, indemnités maladie, chômage, revenu universel, soins, cantines,
+  infrastructures, logement, culture, agriculture ; aide d'urgence), indexation sur l'IPC du mois.
+- Services publics (`PUBLIC_JOBS`, effectifs ‰ par levier, `STAFF_KEY` → poste) : effet **neutre à
+  l'effectif de référence** (`K.adminRef`…) : administration → part des impôts directs perçue (80-100 %),
+  police → vols des foyers affamés (`crime()`), infirmiers → maladies ±15 %, gardes → repousse ±15 %,
+  cantonniers (moitié de `publicInvestment`) + bois/outils → `infra` (productivité 0,9-1,1). Logements
+  sociaux (chauffage ÷2, foyers modestes), matériel scolaire et culture (couvertures `schoolCov`,
+  `cultureCov`), irrigation (`landBonus` : capacité des terres), silo à blé (`siloOrders` : achète sous
+  `grainFloor` × valeur du travail, revend au-dessus de 150 %, ordres `tag 7` au marché de gros). Dividende public au-delà de
   `surplusDays` jours (désactivé par défaut) ; sans dette, filet automatique au-delà de 90 jours.
 - Budget (`voteBudget`, fin du 1er mois puis chaque année, rectificatif tous les 90 j) : besoins chiffrés
   (effectifs × montants, 12 derniers mois pour aides et soins, achats **que le marché a pu fournir**,
@@ -100,6 +116,13 @@ mécanismes qui le tiennent et qu'il ne faut pas retirer à la légère :
   0,3 % au lieu de la cible) ; recaler **toutes** les enveloppes sur la dépense réelle déstabilise.
 - avance de trésorerie : sans elle, la caisse se vide avant les impôts de fin de mois (jusqu'à 250 j sur
   6 ans), pensions et aides suspendues, crises plus fréquentes.
+- IPC à poids fixes : un bien devenu rare et cher (poisson) gonflait l'IPC alors que personne n'en
+  achetait plus ; l'indexation faisait exploser pensions et aides (déficits de 10 %, spirales) → IPC chaîné.
+- détail : aucune vente alors que des commerces proposent → `lastR` se rapproche de l'offre la moins chère
+  (sans ce tâtonnement, l'énergie et le bois ne s'échangeaient pas pendant le premier mois : froid général).
+- prêteur en dernier ressort suspendu au-delà de 10 % d'inflation (sinon il valide les spirales).
+- services publics : coupes budgétaires → moins d'administrateurs → moins d'impôts perçus → plus de
+  coupes (boucle réelle, à surveiller si les impôts baissent fortement).
 - inflation de la banque centrale : ne pas mesurer sur les 6 premiers mois (prix de départ 100 → 200),
   sinon taux directeur à 20 % toute la 2e année. Le taux directeur oscille quand même beaucoup (récoltes).
 
@@ -126,6 +149,7 @@ npx tsx scripts/hungry.ts 720       # qui a faim, avec quel argent et quel reven
 npx tsx scripts/nutri.ts 150        # nutrition produite / vendue / gaspillée vs besoin
 npx tsx scripts/debug.ts 30 42 5    # marchés jour par jour
 npx tsx scripts/budget.ts 6 1 '{…}' # budget annuel : recettes, dépenses par poste, budget voté, monnaie
+npx tsx scripts/services.ts 1080 1 90 # énergie, fonctionnaires, équipements publics, silo, vols, froid
 npx tsx scripts/restore.ts          # instantanés déterministes (jours 360 et 1000) : doit afficher IDENTIQUE
 ```
 
