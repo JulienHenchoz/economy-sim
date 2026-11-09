@@ -2556,12 +2556,13 @@ export class Simulation {
     const base = needs.salaires + needs.pensions + needs.revenuUniversel + needs.aideSociale + needs.remboursementsSante + needs.subsidesPrimes + needs.achats;
     needs.interets = coupons + Math.max(0, base + coupons - revenue) * Math.max(this.lastRate, 0.02) * 0.5;
     // l'État dépense ses recettes plus le déficit permis : si c'est moins que les besoins, les
-    // enveloppes sont réduites au prorata ; si c'est plus, elles sont augmentées (jusqu'à 130 %)
-    const ruleCut = base > 0 ? clamp((revenue + allowed - needs.interets) / base, 0.3, 1.3) : 1;
+    // enveloppes sont réduites au prorata ; si c'est plus, elles sont augmentées (jusqu'à 160 %, pour
+    // qu'un déficit élevé puisse réellement être dépensé)
+    const ruleCut = base > 0 ? clamp((revenue + allowed - needs.interets) / base, 0.3, 1.6) : 1;
     // trajectoire d'ajustement : 10 points au plus au vote annuel, 5 à chaque budget rectificatif
     // (tous les trois mois) ; l'écart restant est un dérapage, emprunté comme le reste
     const step = annual ? 0.1 : 0.05;
-    const cut = clamp(ruleCut, Math.max(0.3, this.budgetCut - step), Math.min(1.3, this.budgetCut + step));
+    const cut = clamp(ruleCut, Math.max(0.3, this.budgetCut - step), Math.min(1.6, this.budgetCut + step));
     const envelopes = zeroSpend();
     for (const k of SPEND_KEYS) envelopes[k] = Math.round(k === 'interets' ? needs[k] : needs[k] * cut);
     for (const k of SPEND_KEYS) needs[k] = Math.round(needs[k]);
@@ -3161,11 +3162,14 @@ export class Simulation {
    * retire sinon de la monnaie du circuit (déflation).
    */
   private redistributeSurplus(): void {
-    const p = this.policy;
-    if (p.surplusDays <= 0) return;
+    // dividende public choisi (`surplusDays`), ou filet automatique : sans dette, une trésorerie de
+    // plus de trois mois de dépenses que le budget n'arrive pas à dépenser (enveloppes au maximum,
+    // État minimal) est reversée ; sinon l'État thésaurise, d'où déflation et famine
+    const days = this.policy.surplusDays > 0 ? this.policy.surplusDays : this.debtTotal <= 0 ? 90 : 0;
+    if (days <= 0) return;
     const sp = this.stateMonth.spending;
     const monthly = sp.salaires + sp.pensions + sp.aideSociale + sp.revenuUniversel + sp.remboursementsSante + sp.subsidesPrimes + sp.achats + sp.interets;
-    const target = (monthly / K.daysPerMonth) * p.surplusDays;
+    const target = (monthly / K.daysPerMonth) * days;
     const excess = this.treasury - target;
     if (excess <= 0) return;
     const adults = this.agents.filter((a) => a.alive && a.status !== 'enfant');
