@@ -1,12 +1,12 @@
 import {
   DEFAULT_INIT, DEFAULT_POLICY, EVENT_DEFS, FOOD_GOODS, GOODS, GOOD_DEFS, JOBS, JOB_DEFS, K,
   MARKET_JOBS, PUBLIC_JOBS, RETAIL_GOODS, RETAIL_MARGIN0,
-  type EventKind, type Good, type InitConfig, type Job, type JobCategory, type Policy,
+  type EventKind, type FiscalRule, type Good, type InitConfig, type Job, type JobCategory, type Policy,
 } from './config';
 import { callAuction, type Order } from './market';
 import {
   Rng, clamp, gini, invAdd, invAddBatches, invExpire, invExpiringBy, invQty, invTake,
-  type Inventory,
+  type Batch, type Inventory,
 } from './util';
 
 export type Status = 'enfant' | 'actif' | 'chomeur' | 'retraite';
@@ -54,6 +54,8 @@ export interface Agent {
   careUntil: number;
   /** Quintile de patrimoine (0..4) relevé chaque fin d'année. */
   quintiles: number[];
+  /** Obligations d'État détenues (nominal, centimes) : épargne placée, pas de la monnaie. */
+  bonds: number;
 }
 
 export interface Business {
@@ -113,12 +115,55 @@ export interface Business {
   claimsPerUnit: number;
   /** Assureur : foyers perdus ce mois (impayés, départs). */
   lostMonth: number;
+  /** Obligations d'État détenues (nominal, centimes) : trésorerie oisive placée. */
+  bonds: number;
 }
 
-type RevKey = 'tva' | 'impotRevenu' | 'impotSocietes' | 'impotFortune' | 'succession' | 'loyers' | 'cotisationsSante' | 'dividendes';
-type SpendKey = 'salaires' | 'pensions' | 'aideSociale' | 'revenuUniversel' | 'remboursementsSante' | 'subsidesPrimes' | 'redistribution';
-export const REV_KEYS: RevKey[] = ['tva', 'impotRevenu', 'impotSocietes', 'impotFortune', 'succession', 'loyers', 'cotisationsSante', 'dividendes'];
-export const SPEND_KEYS: SpendKey[] = ['salaires', 'pensions', 'aideSociale', 'revenuUniversel', 'remboursementsSante', 'subsidesPrimes', 'redistribution'];
+/**
+ * Tranche d'obligations d'État émise lors d'une enchère mensuelle : même taux (coupon annuel versé
+ * chaque mois) et même échéance pour tous les détenteurs. Clé du détenteur : id de l'habitant
+ * (≥ 0) ou −2 − id de l'entreprise.
+ */
+export interface Bond {
+  id: number;
+  issued: number;
+  maturity: number;
+  rate: number;
+  holders: Map<number, number>;
+}
+
+/** Budget annuel voté (centimes, montants annuels). */
+export interface Budget {
+  day: number;
+  rule: FiscalRule;
+  revenue: number; // recettes prévues (moyenne des 12 derniers mois)
+  gdp: number; // PIB prévu
+  needs: Record<SpendKey, number>; // besoins estimés
+  envelopes: Record<SpendKey, number>; // enveloppes votées
+  allowedDeficit: number; // déficit permis par la règle
+  planned: number; // dépenses votées
+  cut: number; // part des besoins financée (1 = tout)
+}
+
+type RevKey = 'tva' | 'impotRevenu' | 'impotSocietes' | 'impotFortune' | 'succession' | 'loyers' | 'cotisationsSante' | 'dividendes' | 'profitsBC';
+type SpendKey = 'salaires' | 'pensions' | 'aideSociale' | 'revenuUniversel' | 'remboursementsSante' | 'subsidesPrimes' | 'achats' | 'aideUrgence' | 'interets' | 'redistribution';
+export const REV_KEYS: RevKey[] = ['tva', 'impotRevenu', 'impotSocietes', 'impotFortune', 'succession', 'loyers', 'cotisationsSante', 'dividendes', 'profitsBC'];
+/** Détenteurs spéciaux d'obligations : banque centrale et investisseurs étrangers. */
+export const CB_KEY = -1;
+export const FOREIGN_KEY = -1e9;
+/** Origines de la monnaie créée (net des destructions, centimes). */
+export type MoneySource = 'bc' | 'banque' | 'etranger';
+
+/** Crédit bancaire à une entreprise (remboursé chaque mois). */
+export interface Loan {
+  biz: number;
+  principal: number;
+  rate: number;
+  monthsLeft: number;
+  missed: number;
+}
+export const SPEND_KEYS: SpendKey[] = ['salaires', 'pensions', 'aideSociale', 'revenuUniversel', 'remboursementsSante', 'subsidesPrimes', 'achats', 'aideUrgence', 'interets', 'redistribution'];
+export type { RevKey, SpendKey };
 
 export type FlowNode = 'menages' | 'production' | 'transformation' | 'commerce' | 'sante' | 'assurance' | 'etat';
 
@@ -188,6 +233,35 @@ export interface DayStats {
   avgPremium: number;
   /** Part des habitants couverts par une assurance privée. */
   insuredRate: number;
+  /** Dette publique (écus), rapportée au PIB des 12 derniers mois ; déficit des 12 derniers mois / PIB. */
+  debt: number;
+  debtRatio: number;
+  deficitRatio: number;
+  /** Taux moyen de la dette (annuel, pondéré par le nominal) et taux de la dernière enchère. */
+  avgRate: number;
+  lastRate: number;
+  /** Emprunts levés et remboursés ce jour (écus) : hors impôts et hors dépenses. */
+  borrowing: number;
+  repayment: number;
+  /** Part de la dette détenue par chaque quintile de patrimoine des adultes (0 = plus pauvres), les entreprises, la banque centrale, l'étranger. */
+  debtHolders: number[];
+  /** Actifs financiers nets par secteur (écus) : monnaie + obligations ; État : trésorerie − dette. */
+  nfaHouseholds: number;
+  nfaBusinesses: number;
+  nfaPublic: number;
+  /** Part des besoins de dépenses financée par le budget de l'année (1 = aucune coupe). */
+  budgetCut: number;
+  /** Monnaie créée (nette) depuis le début, par origine (écus). */
+  moneyCreated: Record<MoneySource, number>;
+  /** Taux directeur (annuel) et inflation sur 12 mois. */
+  policyRate: number;
+  inflation: number;
+  /** Encours des crédits bancaires (écus), dette détenue par la banque centrale et par l'étranger (écus). */
+  bankLoans: number;
+  cbDebt: number;
+  foreignDebt: number;
+  /** Fonds propres de la banque (écus). */
+  bankEquity: number;
 }
 
 export interface Snapshot {
@@ -208,6 +282,8 @@ export interface Snapshot {
   richest: AgentRow[];
   poorest: AgentRow[];
   stateMonth: { revenue: Record<RevKey, number>; spending: Record<SpendKey, number> };
+  budget: Budget | null;
+  debtInfo: { tranches: number; total: number; avgRate: number; nextMaturity: number; nextAmount: number; holdersAgents: number; holdersBiz: number };
   causesTotal: Record<DeathCause, number>;
   events: { kind: EventKind; label: string; daysLeft: number }[];
 }
@@ -256,6 +332,7 @@ export interface AgentRow {
   health: number;
   edu: number;
   insured: boolean;
+  bonds: number; // obligations d'État (écus)
 }
 
 const FIRST = ['Ana', 'Bastien', 'Chloé', 'Dario', 'Élise', 'Fabien', 'Gaëlle', 'Hugo', 'Inès', 'Jules', 'Katia', 'Léo', 'Maëlle', 'Noé', 'Olga', 'Pablo', 'Quentin', 'Rose', 'Sacha', 'Tilio', 'Ulla', 'Victor', 'Wanda', 'Yann', 'Zoé', 'Aurèle', 'Bérénice', 'Côme', 'Dina', 'Ewan', 'Flore', 'Gaspard', 'Hélène', 'Ilan', 'Jade', 'Kenzo', 'Lou', 'Marius', 'Nina', 'Oscar'];
@@ -317,6 +394,50 @@ export class Simulation {
   /** Actes demandés la veille sans médecin disponible : signal de pénurie pour les honoraires. */
   careShortage = 0;
 
+  // --- budget et dette publique
+  /** Obligations en circulation (une tranche par enchère). */
+  debt: Bond[] = [];
+  /** Total du nominal en circulation (centimes). */
+  debtTotal = 0;
+  private nextBondId = 1;
+  /** Budget de l'année en cours (null avant le premier vote, à la fin du premier mois). */
+  budget: Budget | null = null;
+  /** Part des besoins financée (coupes au prorata imposées par la règle budgétaire). */
+  budgetCut = 1;
+  /** Besoins de dépenses du mois (avant coupes), pour estimer le budget suivant. */
+  private needMonth: Record<SpendKey, number> = zeroSpend();
+  /** Comptes mensuels (centimes) : recettes, dépenses, PIB, besoins ; 48 derniers mois. */
+  monthLog: { rev: number; spend: number; gdp: number; ix: number; needs: Record<SpendKey, number> }[] = [];
+  private monthGdp = 0;
+  /** Tension sur la dette (0..1) : monte après une enchère ratée ou un défaut, puis retombe. */
+  debtStress = 0;
+  /** Taux de la dernière enchère (annuel). */
+  lastRate = 0;
+  /** Record de dette / PIB (pour la gazette). */
+  private debtRecord = 0.05;
+  /** Aides d'urgence promises et pas encore versées (entreprise, centimes restants, versement par jour). */
+  pendingRelief: { biz: number; left: number; daily: number }[] = [];
+  /** Achats publics : prix d'achat appris par bien (centimes). */
+  private stateBid: Partial<Record<Good, number>> = {};
+  private lastDebtHolders = [0, 0, 0, 0, 0, 0, 0, 0];
+
+  // --- monnaie, banques, reste du monde
+  /** Masse monétaire attendue : initiale + création nette (sert au contrôle de conservation). */
+  moneyBase = 0;
+  moneyCreated: Record<MoneySource, number> = { bc: 0, banque: 0, etranger: 0 };
+  /** Obligations détenues par la banque centrale et par l'étranger (nominal, centimes). */
+  cbBonds = 0;
+  foreignBonds = 0;
+  /** Taux directeur de la banque centrale (annuel) et inflation sur 12 mois. */
+  policyRate = 0.02;
+  inflation = 0;
+  loans: Loan[] = [];
+  bankLoansTotal = 0;
+  /** Fonds propres de la banque : intérêts retenus moins pertes sur crédits (centimes). */
+  bankEquity = 0;
+  private bankIncomeMonth = 0;
+  private cpiLog: number[] = [];
+
   // compteurs journaliers
   private d = this.freshDaily();
   private lastGini = { w: 0, i: 0, top10: 0, bottom50: 0 };
@@ -358,6 +479,8 @@ export class Simulation {
       careNoDoctor: 0,
       sickUntreated: 0,
       careSpend: { menages: 0, secu: 0, assurance: 0 },
+      borrowing: 0,
+      repayment: 0,
     };
   }
 
@@ -369,6 +492,7 @@ export class Simulation {
     const rng = this.rng;
     const total = population * moneyPerInhabitant * 100;
     this.initialMoney = total;
+    this.moneyBase = total;
     this.treasury = Math.round(total * stateShare);
     const perHead = Math.floor((total - this.treasury) / population);
     this.treasury = total - perHead * population; // le reste de la division va à l'État
@@ -455,7 +579,7 @@ export class Simulation {
       edu: 0, xp: 0, health: 90, sick: false, severe: false, careNeed: 0, status: 'enfant', job: null, biz: -1, publicJob: false,
       food: new Map(), fed: 1, hunger: 0, cold: false, appetite: 0, income: 0, lastIncome: 0, prefs,
       shares: new Map(), deathDay: -1, deathCause: null, jobSince: 0, inherited: 0, quintiles: [],
-      insurer: -1, lastCare: -1e6, careUntil: -1,
+      insurer: -1, lastCare: -1e6, careUntil: -1, bonds: 0,
     };
     this.agents.push(a);
     return a;
@@ -470,7 +594,7 @@ export class Simulation {
       vaPerWorker: this.sectorIncome[job] || 400, vaEma: this.sectorVA[job] || 400, inputDay: 0, profitLastMonth: 0, arrears: 0, offerWage: 0, vacancies: 0,
       founded: this.day,
       fee: 0, actsDay: 0, occupancy: 0.8, premium: 0, markup: 0.05, insuredN: 0, insuredUnits: 0,
-      premiumsMonth: 0, claimsMonth: 0, unitDays: 0, claimsPerUnit: 0, lostMonth: 0,
+      premiumsMonth: 0, claimsMonth: 0, unitDays: 0, claimsPerUnit: 0, lostMonth: 0, bonds: 0,
     };
     owner.shares.set(b.id, 1);
     this.businesses.push(b);
@@ -552,7 +676,7 @@ export class Simulation {
     return cost * this.markupOf(b, g) * (1 + this.policy.vat);
   }
   bizValue(b: Business): number {
-    let v = b.cash + b.tools * this.lastW.outils * 0.7;
+    let v = b.cash + b.bonds + b.tools * this.lastW.outils * 0.7;
     for (const [g, batches] of b.inv) for (const x of batches) v += x.q * this.lastW[g];
     return v;
   }
@@ -600,6 +724,7 @@ export class Simulation {
     this.demography();
     if (this.day % 7 === 0) this.updateSectorVA();
     this.careerReviews();
+    this.monthGdp += this.d.gdp;
     if (this.day % K.daysPerMonth === 0) this.monthly();
     this.recordStats();
   }
@@ -607,6 +732,7 @@ export class Simulation {
   triggerEvent(kind: EventKind): void {
     this.events.set(kind, EVENT_DEFS[kind].days);
     this.say('evenement', `${EVENT_DEFS[kind].label} ! ${EVENT_DEFS[kind].desc}.`);
+    this.promiseRelief(kind);
     if (kind === 'tempete') for (const b of this.businesses) if (b.alive) b.tools *= 0.7;
     if (kind === 'incendie') this.forestStock *= 0.4;
   }
@@ -834,6 +960,10 @@ export class Simulation {
       }
       wanted.set(b.id, wmap);
     }
+    // achats publics : l'État passe ses ordres comme un acheteur ordinaire, dans la limite de son budget
+    const stateWant = this.publicPurchaseOrders();
+    for (const x of stateWant) bids.get(x.g)!.push({ owner: STATE_ID, qty: x.q, price: x.p, filled: 0 });
+    const stateGot = new Map<Good, Batch[]>();
 
     const sold = new Map<number, Partial<Record<Good, number>>>();
     const bought = new Map<number, Partial<Record<Good, number>>>();
@@ -845,6 +975,32 @@ export class Simulation {
       const p = res.price;
       let vol = 0;
       for (const m of res.matches) {
+        if (m.bid.owner === STATE_ID) {
+          const seller = this.businesses[m.ask.owner];
+          let q = m.qty;
+          let cost = Math.round(p * q);
+          const cash = Math.max(0, this.treasury);
+          if (cost > cash) {
+            q = cash / p;
+            cost = Math.min(cash, Math.round(p * q));
+          }
+          if (q <= 1e-6 || cost <= 0) continue;
+          const got = invTake(seller.inv, g, q);
+          const arr = stateGot.get(g) ?? [];
+          arr.push(...got);
+          stateGot.set(g, arr);
+          this.stateOut('achats', cost);
+          seller.cash += cost;
+          seller.revDay += cost;
+          seller.revMonth += cost;
+          this.flow('etat', this.catOf(seller), cost);
+          const s = sold.get(seller.id) ?? {};
+          s[g] = (s[g] ?? 0) + q;
+          sold.set(seller.id, s);
+          vol += q;
+          this.d.wholesaleValue += cost;
+          continue;
+        }
         const buyer = this.businesses[m.bid.owner];
         const seller = this.businesses[m.ask.owner];
         let q = m.qty;
@@ -909,6 +1065,76 @@ export class Simulation {
       for (const [g, q] of Object.entries(w) as [Good, number][]) {
         const got = bought.get(id)?.[g] ?? 0;
         b.bid[g] = this.adaptBid(this.bidOf(b, g), got / q, this.lastW[g]);
+      }
+    }
+    this.deliverPublicPurchases(stateWant, stateGot);
+  }
+
+  /**
+   * Besoins d'achats publics du jour : pain et fruits pour les cantines (`schoolMeals` unités de
+   * nutrition par enfant), bois pour chauffer l'école, outils pour l'entretien. Le budget voté n'en
+   * finance qu'une part ; les quantités sont réduites d'autant.
+   */
+  private publicPurchaseOrders(): { g: Good; q: number; p: number }[] {
+    const p = this.policy;
+    let kids = 0;
+    let pop = 0;
+    for (const a of this.agents) {
+      if (!a.alive) continue;
+      pop++;
+      if (this.ageY(a) < K.adultAge) kids++;
+    }
+    const pupils = Math.min(kids, this.agents.reduce((s, a) => s + (a.alive && a.publicJob ? 1 : 0), 0) * K.pupilsPerTeacher);
+    const meals = kids * p.schoolMeals;
+    const want: { g: Good; q: number }[] = [
+      { g: 'pain', q: (meals * 0.6) / GOOD_DEFS.pain.nutrition },
+      { g: 'fruits', q: (meals * 0.4) / GOOD_DEFS.fruits.nutrition },
+      { g: 'bois', q: pupils * 0.04 },
+      { g: 'outils', q: pop * 0.0005 },
+    ];
+    const out: { g: Good; q: number; p: number }[] = [];
+    let need = 0;
+    for (const x of want) {
+      if (x.q <= 0.01) continue;
+      // l'État suit le marché (au plus 10 % au-dessus du dernier prix) et ne prend pas plus de 15 %
+      // de la capacité de production du bien : il ne doit pas affamer les commerces
+      const price = Math.min((this.stateBid[x.g] ??= this.lastW[x.g]), this.lastW[x.g] * 1.1);
+      this.stateBid[x.g] = price;
+      const q = Math.min(x.q, 0.15 * this.capByGood[x.g]);
+      need += x.q * price;
+      if (q > 0.01) out.push({ g: x.g, q, p: price });
+    }
+    this.needMonth.achats += need;
+    // part financée, et jamais plus que la moitié de la caisse du jour
+    const sc = Math.min(this.budgetCut, need > 0 ? Math.max(0, this.treasury) * 0.5 / need : 0);
+    for (const x of out) x.q *= sc;
+    return out.filter((x) => x.q > 1e-3);
+  }
+
+  /** Livraison : repas des cantines dans le garde-manger des foyers avec enfants ; bois et outils consommés. */
+  private deliverPublicPurchases(want: { g: Good; q: number; p: number }[], got: Map<Good, Batch[]>): void {
+    for (const x of want) {
+      let q = 0;
+      for (const b of got.get(x.g) ?? []) q += b.q;
+      // prix appris : servi → on baisse doucement, pas servi → on monte vers le marché
+      this.stateBid[x.g] = this.adaptBid(x.p, q / x.q, this.lastW[x.g]);
+    }
+    const food = FOOD_GOODS.filter((g) => got.has(g));
+    if (!food.length) return;
+    const homes: { h: Agent; kids: number }[] = [];
+    let kids = 0;
+    for (const a of this.agents) {
+      if (!this.isHead(a)) continue;
+      const n = a.status === 'enfant' ? 1 + this.dependents(a).length : this.dependents(a).length;
+      if (n > 0) {
+        homes.push({ h: a, kids: n });
+        kids += n;
+      }
+    }
+    if (!kids) return;
+    for (const g of food) {
+      for (const batch of got.get(g)!) {
+        for (const { h, kids: n } of homes) invAdd(h.food, g, (batch.q * n) / kids, batch.exp);
       }
     }
   }
@@ -1292,6 +1518,7 @@ export class Simulation {
   private statePayments(): void {
     const p = this.policy;
     const ix = this.indexFactor();
+    const cut = this.budgetCut;
     const civil: Agent[] = [];
     const retirees: Agent[] = [];
     const adults: Agent[] = [];
@@ -1303,26 +1530,52 @@ export class Simulation {
       if (a.status !== 'enfant') adults.push(a);
       if (this.isHead(a) && a.money < p.socialAidThreshold * 100 * this.householdSize(a) * ix) poor.push(a);
     }
-    const plan: [SpendKey, Agent[], (a: Agent) => number, boolean][] = [
-      ['salaires', civil, () => Math.round(p.publicSalary * 100 * ix), true],
-      ['pensions', retirees, () => Math.round(p.pension * 100 * ix), true],
+    // aide d'urgence promise après une catastrophe : dépense exceptionnelle, hors règle budgétaire
+    if (this.pendingRelief.length) {
+      for (const r of this.pendingRelief) {
+        const b = this.businesses[r.biz];
+        const x = Math.min(r.left, r.daily, Math.max(0, this.treasury));
+        if (!b.alive) { r.left = 0; continue; }
+        if (x <= 0) continue;
+        r.left -= x;
+        this.stateOut('aideUrgence', x);
+        b.cash += x;
+        this.flow('etat', this.catOf(b), x);
+      }
+      this.pendingRelief = this.pendingRelief.filter((r) => r.left > 0);
+    }
+    // montants dus (besoins) ; le budget voté n'en finance qu'une part (`cut`), le salaire des
+    // enseignants n'est pas coupé (on en recrute moins)
+    const plan: [SpendKey, Agent[], (a: Agent) => number, boolean, number][] = [
+      ['salaires', civil, () => Math.round(p.publicSalary * 100 * ix), true, 1],
+      ['pensions', retirees, () => Math.round(p.pension * 100 * ix), true, cut],
       // aide sociale : par membre du foyer, pour remonter vers le seuil
       ['aideSociale', poor, (a) => {
         const n = this.householdSize(a);
         return Math.min(Math.round(p.socialAidAmount * 100 * ix * n), Math.round(p.socialAidThreshold * 100 * ix * n) - a.money);
-      }, false],
-      ['revenuUniversel', adults, () => Math.round(p.ubi * 100 * ix), false],
+      }, false, cut],
+      ['revenuUniversel', adults, () => Math.round(p.ubi * 100 * ix), false, cut],
     ];
     let worst = 1;
-    for (const [k, list, amount, taxable] of plan) {
+    for (const [k, list, amount, taxable, share] of plan) {
       let tot = 0;
       for (const a of list) tot += Math.max(0, amount(a));
+      this.needMonth[k] += tot;
+      tot *= share;
       if (tot <= 0) continue;
       const ratio = this.treasury >= tot ? 1 : Math.max(0, this.treasury) / tot;
       worst = Math.min(worst, ratio);
-      for (const a of list) this.spend(k, a, Math.floor(Math.max(0, amount(a)) * ratio), taxable);
+      for (const a of list) this.spend(k, a, Math.floor(Math.max(0, amount(a)) * share * ratio), taxable);
     }
     this.d.paidRatio = worst;
+  }
+
+  /** Sortie de caisse de l'État sans bénéficiaire habitant (l'appelant crédite le destinataire). */
+  private stateOut(k: SpendKey, cents: number): void {
+    if (cents <= 0) return;
+    this.treasury -= cents;
+    this.d.spending[k] += cents;
+    this.stateMonth.spending[k] += cents;
   }
 
   // ------------------------------------------------------------------ santé, école
@@ -1426,6 +1679,9 @@ export class Simulation {
       // pour un foyer modeste, une part des honoraires réels
       let secu = Math.round(p.secuRate * Math.min(price, p.secuTariff * 100 * ix * acts));
       if (payer.money < 4 * p.socialAidThreshold * 100 * ix * this.householdSize(payer)) secu = Math.max(secu, Math.round(p.secuRatePoor * price));
+      // budget voté : la sécu ne rembourse que la part financée des besoins
+      const secuNeed = secu;
+      secu = Math.min(price, Math.round(secu * this.budgetCut));
       secu = Math.max(0, Math.min(secu, this.treasury));
       // assureur : une part de ce qui reste
       const ins = this.validInsurer(payer.insurer);
@@ -1443,6 +1699,7 @@ export class Simulation {
         this.d.careDenied += acts;
         continue;
       }
+      this.needMonth.remboursementsSante += secuNeed;
       if (secu > 0) {
         this.treasury -= secu;
         this.d.spending.remboursementsSante += secu;
@@ -1538,8 +1795,9 @@ export class Simulation {
       const units = this.householdUnits(h);
       const monthly = Math.round(b.premium * units);
       const due = Math.round(monthly / K.daysPerMonth);
-      let state = Math.round(this.subsidyOf(h, monthly) / K.daysPerMonth);
-      state = Math.max(0, Math.min(state, due, this.treasury));
+      let state = Math.min(due, Math.round(this.subsidyOf(h, monthly) / K.daysPerMonth));
+      this.needMonth.subsidesPrimes += Math.max(0, state);
+      state = Math.max(0, Math.min(Math.round(state * this.budgetCut), due, this.treasury));
       const own = due - state;
       if (h.money < own) {
         h.insurer = -1;
@@ -1831,6 +2089,8 @@ export class Simulation {
     }
     a.money = 0;
     a.food.clear();
+    // obligations : la part taxée est annulée (l'État reprend sa dette), le reste va aux enfants
+    if (a.bonds > 0) this.moveBonds(a.id, heirs.map((h) => ({ key: h.id, share: 1 / heirs.length })), this.policy.inheritanceTax);
     for (const [bid, s] of a.shares) {
       const b = this.businesses[bid];
       b.shares.delete(a.id);
@@ -1856,7 +2116,7 @@ export class Simulation {
     // revente du stock et des outils à moitié prix au confrère le plus riche
     const peers = this.businesses.filter((x) => x.alive && x.job === b.job && x.workers.length);
     const buyer = peers.length ? peers.reduce((x, y) => (x.cash >= y.cash ? x : y)) : null;
-    const value = this.bizValue(b) - b.cash;
+    const value = this.bizValue(b) - b.cash - b.bonds;
     if (buyer && value > 0) {
       const price = Math.min(Math.floor(value * 0.5), Math.floor(buyer.cash * 0.5));
       const frac = price / (value * 0.5);
@@ -1883,6 +2143,8 @@ export class Simulation {
       else this.collect('dividendes', rest);
     }
     b.cash = 0;
+    // obligations : partagées entre les actionnaires (la part de l'État est annulée)
+    if (b.bonds > 0) this.moveBonds(-2 - b.id, entries.map(([id, s]) => ({ key: id === STATE_ID ? null : id, share: s })), 0);
     for (const [id] of entries) if (id !== STATE_ID) this.agents[id].shares.delete(b.id);
     b.shares.clear();
     for (const id of b.workers) {
@@ -2002,6 +2264,8 @@ export class Simulation {
       }
     }
     dst.cash += src.cash;
+    if (src.bonds > 0) this.moveBonds(-2 - src.id, [{ key: -2 - dst.id, share: 1 }], 0);
+    for (const l of this.loans) if (l.biz === src.id) l.biz = dst.id;
     dst.tools += src.tools;
     if (src.job === 'assureur') for (const h of this.agents) if (h.insurer === src.id) h.insurer = dst.id;
     for (const [g, batches] of src.inv) invAddBatches(dst.inv, g, batches);
@@ -2059,7 +2323,7 @@ export class Simulation {
         this.flow('menages', 'etat', cot);
       }
       if (p.wealthTax > 0) {
-        let w = a.money;
+        let w = a.money + a.bonds;
         for (const [bid, s] of a.shares) w += s * (values.get(bid) ?? 0);
         const t = Math.min(a.money, Math.round(Math.max(0, w - p.wealthTaxThreshold * 100) * (p.wealthTax / 12)));
         if (t > 0) {
@@ -2113,12 +2377,552 @@ export class Simulation {
     this.compact();
     const lastMonth = this.history.slice(-K.daysPerMonth);
     if (lastMonth.length) this.cpiIndex = lastMonth.reduce((x, r) => x + r.cpi, 0) / lastMonth.length;
+    // --- monnaie : taux directeur, crédit bancaire
+    this.monetaryPolicy();
+    this.bankCredit();
+    // --- budget et dette : coupons, bilan du mois, vote du budget annuel, emprunts et remboursements
+    this.payCoupons();
+    this.closeMonth();
+    if (this.day === K.daysPerMonth || this.day % D === 0) this.voteBudget(true);
+    else if (this.day % 90 === 0 && this.budget) this.voteBudget(false);
+    this.manageDebt();
     this.redistributeSurplus();
+    this.debtStress *= 0.85;
     // --- comptes de l'État et flux
     this.statePrevMonth = this.stateMonth;
     this.stateMonth = { revenue: zeroRev(), spending: zeroSpend() };
     this.flowsPrev = this.flowsMonth;
     this.flowsMonth = new Map();
+  }
+
+  // ------------------------------------------------------------------ budget et dette publique
+
+  /** PIB des 12 derniers mois (centimes), annualisé au début de la simulation. */
+  gdpYear(): number {
+    const m = this.monthLog.slice(-12);
+    if (!m.length) return Math.max(1, this.monthGdp * (D / Math.max(1, this.day)));
+    return Math.max(1, (m.reduce((s, x) => s + x.gdp, 0) * 12) / m.length);
+  }
+
+  /** Taux moyen de la dette en circulation (annuel). */
+  avgDebtRate(): number {
+    let n = 0;
+    let r = 0;
+    for (const t of this.debt) {
+      let q = 0;
+      for (const v of t.holders.values()) q += v;
+      n += q;
+      r += q * t.rate;
+    }
+    return n > 0 ? r / n : 0;
+  }
+
+  /** Ajoute (ou retire, si négatif) du nominal à un détenteur. */
+  private holdBond(t: Bond, key: number, cents: number): void {
+    if (!cents) return;
+    const v = (t.holders.get(key) ?? 0) + cents;
+    if (v > 0) t.holders.set(key, v);
+    else t.holders.delete(key);
+    if (key === CB_KEY) this.cbBonds += cents;
+    else if (key === FOREIGN_KEY) this.foreignBonds += cents;
+    else if (key >= 0) this.agents[key].bonds += cents;
+    else this.businesses[-2 - key].bonds += cents;
+  }
+
+  /** Création (cents > 0) ou destruction (cents < 0) de monnaie, par origine. */
+  private mint(src: MoneySource, cents: number): void {
+    this.moneyBase += cents;
+    this.moneyCreated[src] += cents;
+  }
+
+  /**
+   * Transmet toutes les obligations d'un détenteur : une part `cancel` est annulée (la dette
+   * s'éteint, par exemple les droits de succession), le reste est partagé selon `to` (`key` null =
+   * annulé aussi). Le nominal reste entier : le reste d'arrondi va au premier destinataire.
+   */
+  private moveBonds(from: number, to: { key: number | null; share: number }[], cancel: number): void {
+    for (const t of this.debt) {
+      const n = t.holders.get(from);
+      if (!n) continue;
+      this.holdBond(t, from, -n);
+      let rest = n - Math.round(n * cancel);
+      const parts = to.map((x) => ({ key: x.key, q: Math.floor(rest * x.share) }));
+      const given = parts.reduce((s, x) => s + x.q, 0);
+      const first = parts.find((x) => x.key !== null);
+      if (first) first.q += rest - given;
+      for (const x of parts) {
+        if (x.key === null || x.q <= 0) continue;
+        this.holdBond(t, x.key, x.q);
+        rest -= x.q;
+      }
+      this.debtTotal -= rest; // part annulée
+    }
+    this.debt = this.debt.filter((t) => t.holders.size > 0);
+  }
+
+  /** Coupons mensuels (1/12 du taux annuel). S'ils ne peuvent être payés en entier : défaut partiel. */
+  private payCoupons(): void {
+    let due = 0;
+    for (const t of this.debt) for (const n of t.holders.values()) due += Math.floor((n * t.rate) / 12);
+    if (due <= 0) return;
+    const ratio = this.treasury >= due ? 1 : Math.max(0, this.treasury) / due;
+    for (const t of this.debt) {
+      for (const [k, n] of t.holders) {
+        const c = Math.floor(Math.floor((n * t.rate) / 12) * ratio);
+        if (c <= 0) continue;
+        if (k === CB_KEY) {
+          // coupon versé à la banque centrale : son bénéfice est reversé aussitôt à l'État
+          this.stateOut('interets', c);
+          this.collect('profitsBC', c);
+        } else if (k === FOREIGN_KEY) {
+          // coupon versé à l'étranger : de la monnaie quitte l'île
+          this.stateOut('interets', c);
+          this.mint('etranger', -c);
+        } else if (k >= 0) this.spend('interets', this.agents[k], c, true);
+        else {
+          const b = this.businesses[-2 - k];
+          this.stateOut('interets', c);
+          b.cash += c;
+          this.flow('etat', this.catOf(b), c);
+        }
+      }
+    }
+    if (ratio < 0.999) {
+      this.debtStress = 1;
+      this.say('crise', `Défaut partiel : l'État n'a pu verser que ${Math.round(ratio * 100)} % des intérêts dus à ses créanciers.`);
+    }
+  }
+
+  /** Bilan du mois écoulé, pour les prévisions du budget. */
+  private closeMonth(): void {
+    const rev = REV_KEYS.reduce((s, k) => s + this.stateMonth.revenue[k], 0);
+    const spend = SPEND_KEYS.reduce((s, k) => s + this.stateMonth.spending[k], 0);
+    this.needMonth.interets = this.stateMonth.spending.interets;
+    this.monthLog.push({ rev, spend, gdp: this.monthGdp, ix: this.indexFactor(), needs: this.needMonth });
+    if (this.monthLog.length > 48) this.monthLog.shift();
+    this.needMonth = zeroSpend();
+    this.monthGdp = 0;
+  }
+
+  /**
+   * Vote du budget annuel (fin du premier mois, puis chaque début d'année). Besoins : effectifs
+   * actuels × montants pour les salaires, pensions et revenu universel ; 12 derniers mois pour l'aide
+   * sociale, la santé et les achats ; intérêts de la dette en circulation. Recettes prévues : moyenne
+   * des 12 derniers mois. La règle fixe le déficit permis ; au-delà, les enveloppes sont réduites au
+   * prorata (les intérêts ne se coupent pas).
+   */
+  private voteBudget(annual: boolean): void {
+    const p = this.policy;
+    const months = this.monthLog.slice(-12);
+    if (!months.length) return;
+    // indexation moyenne de l'année écoulée (l'IPC mensuel est trop volatil pour chiffrer un budget)
+    const ix = months.reduce((s, m) => s + m.ix, 0) / months.length;
+    const ann = 12 / months.length;
+    const revenue = months.reduce((s, m) => s + m.rev, 0) * ann;
+    const gdp = this.gdpYear();
+    let pop = 0, retirees = 0, adults = 0;
+    for (const a of this.agents) {
+      if (!a.alive) continue;
+      pop++;
+      if (a.status === 'retraite') retirees++;
+      if (a.status !== 'enfant') adults++;
+    }
+    const needs = zeroSpend();
+    needs.salaires = Math.round((p.teachersPer1000 * pop) / 1000) * p.publicSalary * 100 * ix * D;
+    needs.pensions = retirees * p.pension * 100 * ix * D;
+    needs.revenuUniversel = adults * p.ubi * 100 * ix * D;
+    for (const k of ['aideSociale', 'remboursementsSante', 'subsidesPrimes', 'achats'] as SpendKey[]) {
+      needs[k] = months.reduce((s, m) => s + m.needs[k], 0) * ann;
+    }
+    // intérêts : la dette actuelle à son taux, plus le nouvel emprunt de l'année à mi-parcours
+    let coupons = 0;
+    for (const t of this.debt) for (const n of t.holders.values()) coupons += n * t.rate;
+    let allowed = this.allowedDeficit(revenue, gdp);
+    // sans dette, pas d'excédent à dégager (il n'y a rien à rembourser) ; une trésorerie au-delà de
+    // deux mois de dépenses est remise en circulation dans l'année
+    const spentYear = months.reduce((s, m) => s + m.spend, 0) * ann;
+    if (this.debtTotal <= 0) allowed = Math.max(allowed, 0) + Math.max(0, this.treasury - spentYear / 6);
+    const base = needs.salaires + needs.pensions + needs.revenuUniversel + needs.aideSociale + needs.remboursementsSante + needs.subsidesPrimes + needs.achats;
+    needs.interets = coupons + Math.max(0, base + coupons - revenue) * Math.max(this.lastRate, 0.02) * 0.5;
+    // l'État dépense ses recettes plus le déficit permis : si c'est moins que les besoins, les
+    // enveloppes sont réduites au prorata ; si c'est plus, elles sont augmentées (jusqu'à 130 %)
+    const ruleCut = base > 0 ? clamp((revenue + allowed - needs.interets) / base, 0.3, 1.3) : 1;
+    // trajectoire d'ajustement : 10 points au plus au vote annuel, 5 à chaque budget rectificatif
+    // (tous les trois mois) ; l'écart restant est un dérapage, emprunté comme le reste
+    const step = annual ? 0.1 : 0.05;
+    const cut = clamp(ruleCut, Math.max(0.3, this.budgetCut - step), Math.min(1.3, this.budgetCut + step));
+    const envelopes = zeroSpend();
+    for (const k of SPEND_KEYS) envelopes[k] = Math.round(k === 'interets' ? needs[k] : needs[k] * cut);
+    for (const k of SPEND_KEYS) needs[k] = Math.round(needs[k]);
+    const prev = this.budgetCut;
+    this.budgetCut = cut;
+    if (!annual) {
+      if (this.budget) {
+        this.budget.cut = cut;
+        this.budget.planned = Math.round(base * cut + needs.interets);
+        for (const k of SPEND_KEYS) this.budget.envelopes[k] = Math.round(k === 'interets' ? needs[k] : needs[k] * cut);
+      }
+      if (Math.abs(cut - prev) >= 0.049) this.say('politique', `Budget rectificatif : les enveloppes passent de ${Math.round(prev * 100)} % à ${Math.round(cut * 100)} % des besoins (${cut < prev ? 'recettes plus faibles ou déficit trop élevé' : 'recettes meilleures que prévu'}).`);
+      return;
+    }
+    this.budget = { day: this.day, rule: p.fiscalRule, revenue: Math.round(revenue), gdp: Math.round(gdp), needs, envelopes, allowedDeficit: Math.round(allowed), planned: Math.round(base * cut + needs.interets), cut };
+    const year = Math.floor(this.day / D) + 1;
+    const bal = (revenue - (base * cut + needs.interets)) / gdp;
+    let text = `Budget de l'an ${year} : ${Math.round((base * cut + needs.interets) / 100000)} k écus de dépenses pour ${Math.round(revenue / 100000)} k de recettes prévues, ${bal < 0 ? `déficit de ${(-bal * 100).toFixed(1)} %` : `excédent de ${(bal * 100).toFixed(1)} %`} du PIB.`;
+    if (cut < 0.995) text += ` La règle budgétaire impose des coupes de ${Math.round((1 - cut) * 100)} % sur les pensions, aides, soins, achats et postes d'enseignants${ruleCut < cut - 0.005 ? ` (elle en demandait ${Math.round((1 - ruleCut) * 100)} % : l'ajustement est étalé)` : ''}.`;
+    else if (cut > 1.005) text += ` Les recettes permettent d'aller au-delà des besoins : pensions, aides, soins, achats et postes d'enseignants sont relevés de ${Math.round((cut - 1) * 100)} %.`;
+    else if (prev < 0.995) text += ' Les coupes de l’an dernier sont levées.';
+    this.say('politique', text);
+  }
+
+  /** Déficit permis par la règle budgétaire (centimes, négatif = excédent exigé). */
+  private allowedDeficit(revenue: number, gdp: number): number {
+    const p = this.policy;
+    let allowed = 0;
+    if (p.fiscalRule === 'cibleDeficit') allowed = p.deficitTarget * gdp;
+    else if (p.fiscalRule === 'freinDette') {
+      // frein à l'endettement : dépenses ≤ recettes × (PIB tendanciel / PIB) ; équilibre sur le cycle
+      const m = this.monthLog.slice(-36);
+      const trend = (m.reduce((s, x) => s + x.gdp, 0) * 12) / Math.max(1, m.length);
+      allowed = revenue * (clamp(trend / gdp, 0.9, 1.1) - 1);
+    }
+    // plafond de dette : on s'en approche en douceur (un tiers de la marge restante par an)
+    if (p.debtCeiling > 0) allowed = Math.min(allowed, (p.debtCeiling * gdp - this.debtTotal) / 3);
+    return allowed;
+  }
+
+  /**
+   * Trésorerie : l'État rembourse les obligations échues et emprunte de quoi couvrir le mois à venir
+   * (dépenses courantes moins recettes encaissées au fil des jours, plus 5 jours de marge et les
+   * aides d'urgence promises). Les impôts mensuels arrivent en fin de mois.
+   */
+  private manageDebt(): void {
+    const sm = this.stateMonth;
+    const daily = SPEND_KEYS.reduce((s, k) => s + (k === 'interets' || k === 'redistribution' ? 0 : sm.spending[k]), 0);
+    const inflow = sm.revenue.tva + sm.revenue.loyers + sm.revenue.succession + sm.revenue.dividendes;
+    let maturing = 0;
+    for (const t of this.debt) if (t.maturity <= this.day) for (const n of t.holders.values()) maturing += n;
+    const relief = this.pendingRelief.reduce((s, r) => s + r.left, 0);
+    const need = maturing + Math.max(0, daily - inflow) + daily / 6 + relief - this.treasury;
+    if (need > 1000) this.issueBonds(Math.round(need));
+    this.repayMaturing();
+    const ratio = this.debtTotal / this.gdpYear();
+    if (ratio > this.debtRecord + 0.05) {
+      this.debtRecord = ratio;
+      this.say('crise', `Record : la dette publique atteint ${Math.round(ratio * 100)} % du PIB (${Math.round(this.debtTotal / 100000)} k écus).`);
+    }
+  }
+
+  /** Remboursement des obligations échues ; si la caisse ne suffit pas, le reste est prolongé de 3 mois. */
+  private repayMaturing(): void {
+    const due = this.debt.filter((t) => t.maturity <= this.day);
+    if (!due.length) return;
+    let total = 0;
+    for (const t of due) for (const n of t.holders.values()) total += n;
+    const ratio = this.treasury >= total ? 1 : Math.max(0, this.treasury) / total;
+    for (const t of due) {
+      for (const [k, n] of [...t.holders]) {
+        const x = Math.floor(n * ratio);
+        if (x <= 0) continue;
+        this.holdBond(t, k, -x);
+        this.treasury -= x;
+        this.debtTotal -= x;
+        this.d.repayment += x;
+        if (k === CB_KEY) this.mint('bc', -x); // la banque centrale détruit la monnaie remboursée
+        else if (k === FOREIGN_KEY) this.mint('etranger', -x);
+        else if (k >= 0) this.agents[k].money += x;
+        else this.businesses[-2 - k].cash += x;
+      }
+      if (t.holders.size) t.maturity = this.day + 90;
+    }
+    this.debt = this.debt.filter((t) => t.holders.size > 0);
+    if (ratio < 0.999) {
+      this.debtStress = 1;
+      this.say('crise', `Défaut : l'État ne rembourse que ${Math.round(ratio * 100)} % des obligations échues, le reste est prolongé de trois mois.`);
+    }
+  }
+
+  /** Prime de risque exigée par les prêteurs : croît avec la dette / PIB et après une crise. */
+  private riskPremium(): number {
+    const r = this.debtTotal / this.gdpYear();
+    return 0.2 * r * r + 0.04 * this.debtStress;
+  }
+
+  /**
+   * Émission d'obligations par enchère (prix uniforme). Prêteurs : les foyers dont l'épargne dépasse
+   * un coussin de précaution, et les entreprises qui ont de la trésorerie oisive. Chacun propose la
+   * moitié de ce qu'il peut placer, en trois tranches, à un taux exigé qui croît avec la part de son
+   * patrimoine déjà placée en obligations (plus la prime de risque). Le taux retenu est celui du
+   * dernier prêteur servi. Si l'offre ne suffit pas, l'État emprunte moins : pas de création monétaire.
+   */
+  private issueBonds(amount: number): void {
+    const prem = this.riskPremium();
+    const bids: Order[] = [];
+    const rates = new Map<number, number>(); // tag → taux
+    let tag = 0;
+    const P = (r: number) => 1e6 / (1 + r);
+    const cpn = this.costPerNutrition();
+    const offer = (key: number, money: number, bonds: number, investable: number, base: number, slope: number) => {
+      const willing = investable * 0.5;
+      if (willing < 1000) return;
+      for (let i = 1; i <= 3; i++) {
+        const sh = (bonds + (willing * i) / 3) / Math.max(1, bonds + money);
+        const r = base + prem + slope * sh * sh;
+        rates.set(++tag, r);
+        bids.push({ owner: key, qty: willing / 3, price: P(r), filled: 0, tag });
+      }
+    };
+    for (const a of this.agents) {
+      if (!this.isHead(a) || a.status === 'enfant' || a.money <= 0) continue;
+      const cushion = this.householdNeed(a) * cpn * 1.6 * K.bondCushionDays;
+      // impatience propre à chacun (0,7 à 1,3)
+      const taste = 0.7 + 0.6 * ((a.id * 0.6180339887) % 1);
+      offer(a.id, a.money, a.bonds, a.money - cushion, 0.01 * taste, 0.08 * taste);
+    }
+    for (const b of this.businesses) {
+      if (!b.alive || !b.workers.length) continue;
+      const idle = b.cash - this.reserveOf(b) * 1.5 - b.offerWage * b.workers.length * 30;
+      offer(-2 - b.id, b.cash, b.bonds, idle, 0.015, 0.08);
+    }
+    // investisseurs étrangers : taux mondial + prime de risque, dans la limite du plafond
+    const p = this.policy;
+    const gdp = this.gdpYear();
+    const foreignRoom = Math.max(0, p.foreignDebtCap * gdp - this.foreignBonds);
+    if (foreignRoom > 1000) {
+      const r = K.worldRate + prem * 1.5;
+      rates.set(++tag, r);
+      bids.push({ owner: FOREIGN_KEY, qty: Math.min(foreignRoom, amount), price: P(r), filled: 0, tag });
+    }
+    // banque centrale : achète au taux directeur ce que sa politique monétaire demande
+    const cbRoom = Math.max(0, p.cbFinancing * (this.debtTotal + amount) - this.cbBonds);
+    const cbWant = Math.min(cbRoom, this.cbPurchaseTarget());
+    if (cbWant > 1000) {
+      rates.set(++tag, this.policyRate);
+      bids.push({ owner: CB_KEY, qty: cbWant, price: P(this.policyRate), filled: 0, tag });
+    }
+    const ask: Order = { owner: STATE_ID, qty: amount, price: P(K.bondMaxRate), filled: 0 };
+    const res = callAuction(bids, [ask], this.rng);
+    let rate = 0;
+    for (const m of res.matches) rate = Math.max(rate, rates.get(m.bid.tag!) ?? 0);
+    // prêteur en dernier ressort : la banque centrale complète une enchère ratée (dans sa limite)
+    const placed = res.matches.reduce((s, m) => s + m.qty, 0);
+    const lastResort = Math.min(Math.max(0, amount - placed) , Math.max(0, cbRoom - res.matches.filter((m) => m.bid.owner === CB_KEY).reduce((s, m) => s + m.qty, 0)));
+    if (lastResort > 1000) {
+      res.matches.push({ bid: { owner: CB_KEY, qty: lastResort, price: 0, filled: 0 }, ask, qty: lastResort });
+      rate = Math.max(rate, this.policyRate);
+      this.say('crise', `La banque centrale vole au secours de l'État : elle achète ${Math.round(lastResort / 100)} écus d'obligations que personne ne voulait, avec de la monnaie nouvelle.`);
+    }
+    if (!res.matches.length) {
+      this.debtStress = 1;
+      this.say('crise', `Enchère ratée : personne ne prête à l'État à moins de ${Math.round(K.bondMaxRate * 100)} %. Faute de liquidités, il ne pourra pas tout payer.`);
+      return;
+    }
+    const t: Bond = { id: this.nextBondId++, issued: this.day, maturity: this.day + K.bondMaturity, rate, holders: new Map() };
+    let sold = 0;
+    for (const m of res.matches) {
+      const key = m.bid.owner;
+      if (key === CB_KEY || key === FOREIGN_KEY) {
+        // monnaie nouvelle (banque centrale) ou venue de l'étranger
+        const x = Math.floor(m.qty);
+        if (x <= 0) continue;
+        this.mint(key === CB_KEY ? 'bc' : 'etranger', x);
+        this.treasury += x;
+        this.holdBond(t, key, x);
+        sold += x;
+        continue;
+      }
+      const holder = key >= 0 ? this.agents[key] : null;
+      const biz = key < 0 ? this.businesses[-2 - key] : null;
+      const cash = holder ? holder.money : biz!.cash;
+      const x = Math.min(cash, Math.floor(m.qty));
+      if (x <= 0) continue;
+      if (holder) holder.money -= x;
+      else biz!.cash -= x;
+      this.treasury += x;
+      this.holdBond(t, key, x);
+      sold += x;
+    }
+    if (sold <= 0) return;
+    this.debt.push(t);
+    this.debtTotal += sold;
+    this.d.borrowing += sold;
+    const prev = this.lastRate;
+    this.lastRate = rate;
+    if (sold < amount * 0.9) {
+      this.debtStress = Math.min(1, this.debtStress + 0.5);
+      this.say('crise', `Enchère ratée : l'État ne place que ${Math.round((sold / amount) * 100)} % des obligations voulues (${Math.round(sold / 100)} écus sur ${Math.round(amount / 100)}), au taux de ${(rate * 100).toFixed(1)} %.`);
+    } else if (prev > 0 && rate > prev + 0.015 && rate > 0.05) {
+      this.say('crise', `Le taux de la dette s'envole : ${(prev * 100).toFixed(1)} % → ${(rate * 100).toFixed(1)} % à la dernière enchère.`);
+    }
+  }
+
+  /**
+   * Aide d'urgence après une catastrophe : une part (`disasterRelief`) des pertes estimées des
+   * indépendants et entreprises touchés, versée sur 30 jours. Dépense exceptionnelle, empruntée
+   * hors règle budgétaire.
+   */
+  private promiseRelief(kind: EventKind): void {
+    const rate = this.policy.disasterRelief;
+    if (rate <= 0 || kind === 'epidemie') return;
+    let total = 0;
+    let n = 0;
+    for (const b of this.businesses) {
+      if (!b.alive || !b.workers.length) continue;
+      const va = Math.max(0, b.vaEma) * b.workers.length;
+      let loss = 0;
+      if (kind === 'mauvaise_recolte' && (b.job === 'cerealier' || b.job === 'arboriculteur' || b.job === 'eleveur')) loss = 0.5 * va * EVENT_DEFS[kind].days;
+      if (kind === 'tempete') loss = (b.job === 'pecheur' ? va * EVENT_DEFS[kind].days : 0) + b.tools * 0.3 * this.lastW.outils;
+      if (kind === 'incendie' && b.job === 'bucheron') loss = 0.5 * va * 60;
+      const x = Math.round(loss * rate);
+      if (x < 100) continue;
+      this.pendingRelief.push({ biz: b.id, left: x, daily: Math.ceil(x / 30) });
+      total += x;
+      n++;
+    }
+    if (n) this.say('politique', `Aide d'urgence : l'État promet ${Math.round(total / 100)} écus à ${n} entreprises et indépendants touchés (${Math.round(rate * 100)} % des pertes estimées), versés sur un mois et empruntés hors budget.`);
+  }
+
+
+  // ------------------------------------------------------------------ banque centrale et banque
+
+  /**
+   * Politique monétaire (chaque mois) : inflation sur 12 mois, taux directeur selon une règle de
+   * Taylor simplifiée (taux neutre 2 % + inflation + moitié de l'écart à la cible), entre 0 et 20 %.
+   */
+  private monetaryPolicy(): void {
+    this.cpiLog.push(this.cpiIndex);
+    if (this.cpiLog.length > 24) this.cpiLog.shift();
+    // l'IPC mensuel est très volatil (cycles des récoltes) : inflation = prix moyens des 12 derniers
+    // mois / prix moyens des 12 mois précédents
+    const n = this.cpiLog.length;
+    if (n >= 24) {
+      const avg = (a: number[]) => a.reduce((x, y) => x + y, 0) / a.length;
+      this.inflation = avg(this.cpiLog.slice(12)) / avg(this.cpiLog.slice(0, 12)) - 1;
+    } else if (n >= 7) {
+      const h = Math.floor(n / 2);
+      const avg = (a: number[]) => a.reduce((x, y) => x + y, 0) / a.length;
+      this.inflation = Math.pow(avg(this.cpiLog.slice(h)) / avg(this.cpiLog.slice(0, h)), 12 / h) - 1;
+    } else this.inflation = 0;
+    // les prix de départ s'ajustent la première année : la banque centrale ne réagit qu'ensuite
+    if (this.day < D) this.inflation = clamp(this.inflation, -0.1, 0.1);
+    const t = this.policy.inflationTarget;
+    this.policyRate = clamp(0.02 + this.inflation + 0.5 * (this.inflation - t), 0, 0.2);
+  }
+
+  /**
+   * Achats d'obligations visés par la banque centrale à l'enchère du mois : d'autant plus que
+   * l'inflation est sous la cible (création monétaire contre la déflation) ; rien si elle est au-dessus
+   * (ses titres arrivent à échéance et la monnaie remboursée est détruite).
+   */
+  private cbPurchaseTarget(): number {
+    const gap = this.policy.inflationTarget - this.inflation;
+    if (gap <= 0 || this.day < D) return 0;
+    return this.moneyBase * 0.01 * Math.min(3, gap / 0.02);
+  }
+
+  /**
+   * Crédit bancaire aux entreprises (chaque mois). Une entreprise rentable qui manque de trésorerie
+   * ou qui veut embaucher ou s'équiper emprunte, si la mensualité ne dépasse pas 30 % de sa valeur
+   * ajoutée. Le prêt crée de la monnaie (un dépôt), le remboursement du capital la détruit. Les
+   * intérêts vont à la banque : elle en garde 10 % en fonds propres (plus après des pertes) et verse
+   * le reste aux déposants, au prorata de leur épargne. Trois mensualités impayées : défaut, la
+   * banque perd le capital restant.
+   */
+  private bankCredit(): void {
+    const p = this.policy;
+    const rate = this.policyRate + p.bankSpread;
+    // remboursements
+    const keep: Loan[] = [];
+    for (const l of this.loans) {
+      const b = this.businesses[l.biz];
+      if (!b.alive) {
+        this.loanLoss(l);
+        continue;
+      }
+      const cap = Math.ceil(l.principal / Math.max(1, l.monthsLeft));
+      const int = Math.round((l.principal * l.rate) / 12);
+      if (b.cash >= cap + int) {
+        b.cash -= cap + int;
+        b.otherMonth += int;
+        l.principal -= cap;
+        l.monthsLeft--;
+        this.bankLoansTotal -= cap;
+        this.mint('banque', -cap);
+        this.bankIncomeMonth += int;
+        this.flow(this.catOf(b), 'menages', int);
+        l.missed = 0;
+      } else if (++l.missed >= 3) {
+        this.loanLoss(l);
+        continue;
+      }
+      if (l.principal > 0) keep.push(l);
+    }
+    this.loans = keep;
+    // intérêts : fonds propres puis déposants
+    if (this.bankIncomeMonth > 0) {
+      const retain = Math.round(this.bankIncomeMonth * (this.bankEquity < 0 ? 1 : 0.1));
+      this.bankEquity += retain;
+      this.mint('banque', -retain);
+      let pay = this.bankIncomeMonth - retain;
+      const savers = this.agents.filter((a) => a.alive && a.money > 0 && a.status !== 'enfant');
+      const tot = savers.reduce((s, a) => s + a.money, 0);
+      if (tot > 0 && pay > 0) {
+        let paid = 0;
+        for (const a of savers) {
+          const x = Math.floor((pay * a.money) / tot);
+          if (x <= 0) continue;
+          this.payAgent(a, x);
+          paid += x;
+        }
+        // reste d'arrondi : fonds propres
+        this.bankEquity += pay - paid;
+        this.mint('banque', -(pay - paid));
+      }
+      this.bankIncomeMonth = 0;
+    }
+    // nouveaux crédits : à partir de la 2e année (les prix de départ se sont ajustés), plafond ancré
+    // sur le PIB de départ (5 fois la masse monétaire initiale) pour ne pas s'auto-entretenir avec
+    // l'inflation, et au plus 1 % de la masse monétaire de crédits nouveaux par mois
+    const cap = p.creditLimit * this.initialMoney * 5;
+    if (p.creditLimit <= 0 || this.day < D || this.bankEquity < -0.1 * cap) return;
+    let room = Math.min(cap - this.bankLoansTotal, this.moneyBase * 0.01);
+    // la demande de crédit baisse avec le taux : nulle à 15 %
+    const appetite = clamp(1 - rate / 0.15, 0, 1);
+    const owed = new Map<number, number>();
+    for (const l of this.loans) owed.set(l.biz, (owed.get(l.biz) ?? 0) + l.principal);
+    const cands = this.businesses.filter((b) => b.alive && b.workers.length && b.vaPerWorker > 0);
+    // les plus rentables d'abord
+    cands.sort((x, y) => y.vaPerWorker - x.vaPerWorker);
+    for (const b of cands) {
+      if (room <= 1000) break;
+      const nw = b.workers.length;
+      const reserve = this.reserveOf(b);
+      let want = 0;
+      if (b.cash < reserve) want += reserve * 1.5 - b.cash;
+      if (b.vacancies > 0 || (b.vaPerWorker * 0.7 >= p.minWage * 100 * this.indexFactor() * 1.1 && b.cash < b.offerWage * 40 + reserve)) want += b.offerWage * 30;
+      if (b.tools < nw * 0.95 && b.job !== 'charpentier') want += (nw - b.tools) * this.lastW.outils;
+      want *= appetite * 0.5;
+      if (want < 2000) continue;
+      // capacité de remboursement : mensualités ≤ 30 % de la valeur ajoutée mensuelle
+      const vaMonth = b.vaPerWorker * nw * K.daysPerMonth;
+      const debt = owed.get(b.id) ?? 0;
+      const maxDebt = (vaMonth * 0.3) / (1 / K.loanMonths + rate / 12);
+      const x = Math.floor(Math.min(want, maxDebt - debt, room));
+      if (x < 2000) continue;
+      this.loans.push({ biz: b.id, principal: x, rate, monthsLeft: K.loanMonths, missed: 0 });
+      this.bankLoansTotal += x;
+      this.mint('banque', x);
+      b.cash += x;
+      room -= x;
+      owed.set(b.id, debt + x);
+    }
+  }
+
+  /** Défaut d'un emprunteur : la banque perd le capital ; la monnaie déjà prêtée reste en circulation. */
+  private loanLoss(l: Loan): void {
+    this.bankEquity -= l.principal;
+    this.bankLoansTotal -= l.principal;
+    l.principal = 0;
   }
 
   /** Valeur ajoutée moyenne par travailleur dans chaque métier, pondérée par les effectifs. */
@@ -2334,15 +3138,15 @@ export class Simulation {
   }
 
   /**
-   * Règle budgétaire : la trésorerie au-delà de N jours de dépenses courantes est reversée à parts
-   * égales aux adultes (« dividende public »). Sans elle, un État excédentaire retire de la
-   * monnaie du circuit et provoque une déflation.
+   * « Dividende public » (levier, désactivé par défaut) : la trésorerie au-delà de N jours de
+   * dépenses courantes est reversée à parts égales aux adultes. Un État excédentaire sans dette
+   * retire sinon de la monnaie du circuit (déflation).
    */
   private redistributeSurplus(): void {
     const p = this.policy;
     if (p.surplusDays <= 0) return;
     const sp = this.stateMonth.spending;
-    const monthly = sp.salaires + sp.pensions + sp.aideSociale + sp.revenuUniversel + sp.remboursementsSante + sp.subsidesPrimes;
+    const monthly = sp.salaires + sp.pensions + sp.aideSociale + sp.revenuUniversel + sp.remboursementsSante + sp.subsidesPrimes + sp.achats + sp.interets;
     const target = (monthly / K.daysPerMonth) * p.surplusDays;
     const excess = this.treasury - target;
     if (excess <= 0) return;
@@ -2358,7 +3162,8 @@ export class Simulation {
     const pop = this.agents.reduce((s, a) => s + (a.alive ? 1 : 0), 0);
     const salary = p.publicSalary * 100 * this.indexFactor();
     for (const job of PUBLIC_JOBS) {
-      const target = Math.round((p.teachersPer1000 * pop) / 1000);
+      // le budget voté peut imposer moins de postes que prévu (coupes au prorata)
+      const target = Math.round(((p.teachersPer1000 * pop) / 1000) * this.budgetCut);
       const current = this.agents.filter((a) => a.alive && a.publicJob && a.job === job);
       if (current.length > target) {
         current.sort((x, y) => y.jobSince - x.jobSince);
@@ -2403,7 +3208,7 @@ export class Simulation {
   }
 
   wealthOf(a: Agent, values?: Map<number, number>): number {
-    let w = a.money;
+    let w = a.money + a.bonds;
     for (const [bid, s] of a.shares) w += s * (values?.get(bid) ?? this.bizValue(this.businesses[bid]));
     return w;
   }
@@ -2424,7 +3229,7 @@ export class Simulation {
 
   private recordStats(): void {
     const money = this.totalMoney();
-    this.moneyError = money.total - this.initialMoney;
+    this.moneyError = money.total - this.moneyBase;
     let pop = 0, enfants = 0, actifs = 0, chomeurs = 0, retraites = 0, health = 0, eduSum = 0, eduN = 0, hungry = 0, sick = 0, pubEmp = 0;
     const workersByJob = zeroJobs();
     for (const a of this.agents) {
@@ -2468,10 +3273,29 @@ export class Simulation {
       const tot = sorted.reduce((s, x) => s + Math.max(0, x), 0) || 1;
       const n = sorted.length;
       this.lastGini.top10 = sorted.slice(Math.floor(n * 0.9)).reduce((s, x) => s + Math.max(0, x), 0) / tot;
+      // détention de la dette par quintile de patrimoine (adultes), puis par les entreprises
+      const dh = [0, 0, 0, 0, 0, 0, 0, 0];
+      if (this.debtTotal > 0) {
+        const order = adults.map((a, i) => ({ a, w: w[i] })).sort((x, y) => x.w - y.w);
+        order.forEach(({ a }, i) => (dh[Math.min(4, Math.floor((i / order.length) * 5))] += a.bonds));
+        for (const b of this.businesses) if (b.alive) dh[5] += b.bonds;
+        dh[6] = this.cbBonds;
+        dh[7] = this.foreignBonds;
+        const tb = dh.reduce((s, x) => s + x, 0) || 1;
+        for (let i = 0; i < 8; i++) dh[i] /= tb;
+      }
+      this.lastDebtHolders = dh;
       this.lastGini.bottom50 = sorted.slice(0, Math.floor(n * 0.5)).reduce((s, x) => s + Math.max(0, x), 0) / tot;
     }
     let insured = 0;
     for (const a of this.agents) if (this.isHead(a) && this.validInsurer(a.insurer)) insured += this.householdSize(a);
+    let bondsA = 0;
+    let bondsB = 0;
+    for (const a of this.agents) bondsA += a.bonds;
+    for (const b of this.businesses) bondsB += b.bonds;
+    const gdpY = this.gdpYear();
+    const log = this.monthLog.slice(-12);
+    const defY = log.length ? log.reduce((s, m) => s + m.spend - m.rev, 0) / Math.max(1, log.reduce((s, m) => s + m.gdp, 0)) : 0;
     let premW = 0;
     let premU = 0;
     for (const b of this.businesses) {
@@ -2511,6 +3335,15 @@ export class Simulation {
       careSpend: { menages: e(this.d.careSpend.menages), secu: e(this.d.careSpend.secu), assurance: e(this.d.careSpend.assurance) },
       avgFee: e(this.avgFee), avgPremium: premU ? e(premW / premU) : 0,
       insuredRate: pop ? insured / pop : 0,
+      debt: e(this.debtTotal), debtRatio: this.debtTotal / gdpY, deficitRatio: defY,
+      avgRate: this.avgDebtRate(), lastRate: this.lastRate,
+      borrowing: e(this.d.borrowing), repayment: e(this.d.repayment),
+      debtHolders: [...this.lastDebtHolders],
+      nfaHouseholds: e(money.households + bondsA), nfaBusinesses: e(money.businesses + bondsB - this.bankLoansTotal), nfaPublic: e(this.treasury - this.debtTotal),
+      budgetCut: this.budgetCut,
+      moneyCreated: { bc: e(this.moneyCreated.bc), banque: e(this.moneyCreated.banque), etranger: e(this.moneyCreated.etranger) },
+      policyRate: this.policyRate, inflation: this.inflation,
+      bankLoans: e(this.bankLoansTotal), cbDebt: e(this.cbBonds), foreignDebt: e(this.foreignBonds), bankEquity: e(this.bankEquity),
     };
     this.history.push(row);
   }
@@ -2538,6 +3371,7 @@ export class Simulation {
       health: a.health,
       edu: a.edu,
       insured: !!this.validInsurer(this.isHead(a) || a.parent < 0 ? a.insurer : this.agents[a.parent].insurer),
+      bonds: a.bonds / 100,
     };
   }
 
@@ -2645,6 +3479,13 @@ export class Simulation {
       top10: last.top10Wealth,
       fish: this.fishStock / K.fishK,
       forest: this.forestStock / K.forestK,
+      debt: last.debt,
+      debtRatio: last.debtRatio,
+      deficitRatio: last.deficitRatio,
+      lastRate: last.lastRate,
+      policyRate: last.policyRate,
+      inflation: last.inflation,
+      moneyCreated: last.moneyCreated.bc + last.moneyCreated.banque + last.moneyCreated.etranger,
     };
     return {
       day: this.day,
@@ -2660,11 +3501,33 @@ export class Simulation {
       richest: sortedW.slice(0, 15).map((x) => this.agentRow(x.a, values)),
       poorest: sortedW.slice(-15).reverse().map((x) => this.agentRow(x.a, values)),
       stateMonth: this.statePrevMonth,
+      budget: this.budget,
+      debtInfo: this.debtInfo(),
       causesTotal: { ...this.causesTotal },
       events: [...this.events].map(([kind, daysLeft]) => ({ kind, label: EVENT_DEFS[kind].label, daysLeft })),
       ...this.mobility(),
       news: this.news.slice(-60),
     };
+  }
+
+  private debtInfo(): Snapshot['debtInfo'] {
+    let next = Infinity;
+    let nextAmount = 0;
+    let ha = 0;
+    let hb = 0;
+    for (const t of this.debt) {
+      let q = 0;
+      for (const [k, v] of t.holders) {
+        q += v;
+        if (k >= 0) ha++;
+        else if (k !== CB_KEY && k !== FOREIGN_KEY) hb++;
+      }
+      if (t.maturity < next) {
+        next = t.maturity;
+        nextAmount = q;
+      } else if (t.maturity === next) nextAmount += q;
+    }
+    return { tranches: this.debt.length, total: this.debtTotal / 100, avgRate: this.avgDebtRate(), nextMaturity: Number.isFinite(next) ? next : -1, nextAmount: nextAmount / 100, holdersAgents: ha, holdersBiz: hb };
   }
 
   /** Mobilité sociale : quintile d'il y a jusqu'à 5 ans → quintile du dernier relevé annuel. */

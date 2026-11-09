@@ -2,8 +2,8 @@ import './style.css';
 import Chart from 'chart.js/auto';
 import { SankeyController, Flow } from 'chartjs-chart-sankey';
 import {
-  DEFAULT_INIT, DEFAULT_POLICY, EVENT_DEFS, GOODS, GOOD_DEFS, JOBS, JOB_DEFS, RETAIL_GOODS,
-  type EventKind, type Good, type InitConfig, type Job, type Policy,
+  DEFAULT_INIT, DEFAULT_POLICY, EVENT_DEFS, FISCAL_RULES, GOODS, GOOD_DEFS, JOBS, JOB_DEFS, RETAIL_GOODS,
+  type EventKind, type FiscalRule, type Good, type InitConfig, type Job, type Policy,
 } from './sim/config';
 import type { AgentRow, DayStats, MapState, NewsItem, Snapshot } from './sim/sim';
 import type { BranchInfo, FromWorker, Mark, ToWorker } from './worker';
@@ -106,14 +106,17 @@ const esc = (s: string) => s.replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&l
 
 const REV_LABELS: Record<string, string> = {
   tva: 'TVA', impotRevenu: 'Impôt sur le revenu', impotSocietes: 'Impôt sur les sociétés', impotFortune: 'Impôt sur la fortune',
-  succession: 'Successions', loyers: 'Taxe sur les locaux', cotisationsSante: 'Cotisations santé', dividendes: 'Dividendes (parts publiques)',
+  succession: 'Successions', loyers: 'Taxe sur les locaux', cotisationsSante: 'Cotisations santé', dividendes: 'Dividendes (parts publiques)', profitsBC: 'Bénéfice de la banque centrale',
 };
 const SPEND_LABELS: Record<string, string> = {
   salaires: 'Salaires (enseignants)', pensions: 'Pensions', aideSociale: 'Aide sociale', revenuUniversel: 'Revenu universel',
-  remboursementsSante: 'Remboursements de soins', subsidesPrimes: 'Subsides aux primes', redistribution: 'Reversement de l’excédent',
+  remboursementsSante: 'Remboursements de soins', subsidesPrimes: 'Subsides aux primes', achats: 'Achats (cantines, bois, outils)',
+  aideUrgence: 'Aide d’urgence', interets: 'Intérêts de la dette', redistribution: 'Dividende public',
 };
-const REV_COLORS = ['#1f6f8b', '#e07a2f', '#805ad5', '#d53f8c', '#718096', '#b7791f', '#e53e3e', '#38a169'];
-const SPEND_COLORS = ['#319795', '#dd6b20', '#c53030', '#6b46c1', '#e53e3e', '#3182ce', '#a0aec0'];
+const REV_COLORS = ['#1f6f8b', '#e07a2f', '#805ad5', '#d53f8c', '#718096', '#b7791f', '#e53e3e', '#38a169', '#2d3748'];
+const SPEND_COLORS = ['#319795', '#dd6b20', '#c53030', '#6b46c1', '#e53e3e', '#3182ce', '#38a169', '#ecc94b', '#2d3748', '#a0aec0'];
+const HOLDER_LABELS = ['Quintile 1 (plus pauvres)', 'Quintile 2', 'Quintile 3', 'Quintile 4', 'Quintile 5 (plus riches)', 'Entreprises', 'Banque centrale', 'Étranger'];
+const HOLDER_COLORS = ['#c6f6d5', '#9ae6b4', '#68d391', '#38a169', '#22543d', '#805ad5', '#e07a2f', '#c53030'];
 const STATUS_LABEL: Record<string, string> = { enfant: 'Enfant', actif: 'Actif', chomeur: 'Sans emploi', retraite: 'Retraité' };
 const FLOW_LABEL: Record<string, string> = {
   'menages>': 'Ménages (dépenses)', '>menages': 'Ménages (revenus)', 'etat>': 'État (dépenses)', '>etat': 'État (recettes)',
@@ -664,6 +667,122 @@ const charts: ChartDef[] = [
     },
   },
   {
+    tab: 'etat', title: 'Dette et déficit', desc: 'Dette publique en part du PIB annuel (gauche) et déficit des 12 derniers mois en part du PIB (droite ; négatif = excédent). Le PIB est ici la valeur des ventes au détail d’une année.',
+    build: (c) => lineChart(c, [
+      { label: 'Dette / PIB', color: '#2d3748', fill: true },
+      { label: 'Déficit / PIB (12 mois)', color: css('--bad'), axis: 'y2' },
+    ], { percent: true, y2Title: 'déficit', y2percent: true }),
+    update: (c) => {
+      c.data.datasets[0].data = series((r) => r.debtRatio ?? 0);
+      c.data.datasets[1].data = series((r) => r.deficitRatio ?? 0);
+    },
+  },
+  {
+    tab: 'etat', title: 'Taux d’intérêt et charge de la dette', desc: 'Taux de la dernière enchère et taux moyen de la dette (gauche, annuels) ; intérêts versés chaque mois en part des recettes fiscales (droite).',
+    build: (c) => lineChart(c, [
+      { label: 'Dernière enchère', color: '#e07a2f' },
+      { label: 'Taux moyen', color: '#1f6f8b' },
+      { label: 'Intérêts / recettes', color: '#2d3748', axis: 'y2', dash: true },
+    ], { percent: true, y2Title: 'charge', y2percent: true }),
+    update: (c) => {
+      c.data.datasets[0].data = series((r) => r.lastRate ?? 0);
+      c.data.datasets[1].data = series((r) => r.avgRate ?? 0);
+      const rev = (r: DayStats) => Object.values(r.revenue).reduce((a, b) => a + b, 0);
+      const s1 = series((r) => r.spending.interets ?? 0, 360);
+      const s2 = series(rev, 360);
+      c.data.datasets[2].data = s1.map((p, i) => ({ x: p.x, y: s2[i].y > 0 ? p.y / s2[i].y : 0 }));
+    },
+  },
+  {
+    tab: 'etat', title: 'Qui détient la dette ?', desc: 'Part des obligations d’État détenue par chaque quintile de patrimoine des adultes, les entreprises, la banque centrale (achetées avec de la monnaie nouvelle) et l’étranger. Les intérêts vont à ceux qui ont de l’épargne à placer ; ceux versés à l’étranger quittent l’île.',
+    build: (c) => lineChart(c, HOLDER_LABELS.map((l, i) => ({ label: l, color: HOLDER_COLORS[i], fill: true })), { percent: true, stacked: true }),
+    update: (c) => HOLDER_LABELS.forEach((_, i) => (c.data.datasets[i].data = series((r) => r.debtHolders?.[i] ?? 0, 5))),
+  },
+  {
+    tab: 'etat', title: 'Soldes des secteurs', desc: 'Par mois : variation des actifs financiers nets (monnaie + obligations − crédits) de chaque secteur. La somme est nulle : un déficit public est financé par l’épargne des ménages et des entreprises, par la création monétaire (banques) ou par l’étranger.',
+    build: (c) => barChart(c, [
+      { label: 'État', color: '#2d3748' },
+      { label: 'Ménages', color: '#38a169' },
+      { label: 'Entreprises', color: '#805ad5' },
+      { label: 'Banques et étranger', color: '#e07a2f' },
+    ], { stacked: true, yTitle: 'écus' }),
+    update: (c) => {
+      const labels: string[] = [];
+      const st: number[] = [], hh: number[] = [], bz: number[] = [];
+      for (let start = 1; start + 29 < history.length; start += 30) {
+        const a = history[start - 1], b = history[start + 29];
+        labels.push(`${Math.floor(b.day / 360) + 1}.${Math.floor(((b.day - 1) % 360) / 30) + 1}`);
+        st.push((b.nfaPublic ?? 0) - (a.nfaPublic ?? 0));
+        hh.push((b.nfaHouseholds ?? 0) - (a.nfaHouseholds ?? 0));
+        bz.push((b.nfaBusinesses ?? 0) - (a.nfaBusinesses ?? 0));
+      }
+      const k = 48;
+      c.data.labels = labels.slice(-k);
+      c.data.datasets[0].data = st.slice(-k);
+      c.data.datasets[1].data = hh.slice(-k);
+      c.data.datasets[2].data = bz.slice(-k);
+      c.data.datasets[3].data = st.slice(-k).map((x, i) => -(x + hh.slice(-k)[i] + bz.slice(-k)[i]));
+    },
+  },
+  {
+    tab: 'monnaie', title: 'Masse monétaire et ses origines', desc: 'Monnaie en circulation (écus) : la dotation de départ plus la monnaie créée, nette des destructions, par la banque centrale (achats d’obligations), la banque (crédits) et l’étranger (achats d’obligations moins intérêts et remboursements versés).',
+    build: (c) => lineChart(c, [
+      { label: 'Masse monétaire', color: '#2d3748' },
+      { label: 'Créée par la banque centrale', color: '#e07a2f' },
+      { label: 'Créée par les crédits', color: '#3182ce' },
+      { label: 'Venue de l’étranger (nette)', color: '#c53030' },
+    ], { yTitle: 'écus' }),
+    update: (c) => {
+      c.data.datasets[0].data = series((r) => r.moneyTotal);
+      c.data.datasets[1].data = series((r) => r.moneyCreated?.bc ?? 0);
+      c.data.datasets[2].data = series((r) => r.moneyCreated?.banque ?? 0);
+      c.data.datasets[3].data = series((r) => r.moneyCreated?.etranger ?? 0);
+    },
+  },
+  {
+    tab: 'monnaie', title: 'Inflation et taux', desc: 'Inflation sur 12 mois, taux directeur de la banque centrale (règle de Taylor : il monte plus vite que l’inflation) et taux de la dernière enchère de dette publique.',
+    build: (c) => lineChart(c, [
+      { label: 'Inflation (12 mois)', color: css('--bad') },
+      { label: 'Taux directeur', color: '#e07a2f' },
+      { label: 'Taux de la dette', color: '#1f6f8b' },
+    ], { percent: true }),
+    update: (c) => {
+      c.data.datasets[0].data = series((r) => r.inflation ?? 0);
+      c.data.datasets[1].data = series((r) => r.policyRate ?? 0);
+      c.data.datasets[2].data = series((r) => r.lastRate ?? 0);
+    },
+  },
+  {
+    tab: 'monnaie', title: 'Crédit et dette publique par prêteur', desc: 'Encours des crédits bancaires aux entreprises ; dette publique détenue par la banque centrale et par l’étranger (écus) ; fonds propres de la banque (négatifs après des défauts).',
+    build: (c) => lineChart(c, [
+      { label: 'Crédits aux entreprises', color: '#3182ce' },
+      { label: 'Dette détenue par la banque centrale', color: '#e07a2f' },
+      { label: 'Dette détenue par l’étranger', color: '#c53030' },
+      { label: 'Fonds propres de la banque', color: '#38a169', dash: true },
+    ], { yTitle: 'écus' }),
+    update: (c) => {
+      c.data.datasets[0].data = series((r) => r.bankLoans ?? 0);
+      c.data.datasets[1].data = series((r) => r.cbDebt ?? 0);
+      c.data.datasets[2].data = series((r) => r.foreignDebt ?? 0);
+      c.data.datasets[3].data = series((r) => r.bankEquity ?? 0);
+    },
+  },
+  {
+    tab: 'etat', title: 'Financement : impôts et emprunts', desc: 'Par mois : recettes fiscales, emprunts levés aux enchères et obligations remboursées. Les emprunts ne sont pas des recettes : ils devront être rendus, avec intérêts.',
+    build: (c) => barChart(c, [
+      { label: 'Recettes fiscales', color: '#1f6f8b' },
+      { label: 'Emprunts', color: '#e07a2f' },
+      { label: 'Remboursements', color: '#a0aec0' },
+    ], { yTitle: 'écus' }),
+    update: (c) => {
+      const a = monthly((r) => Object.values(r.revenue).reduce((x, y) => x + y, 0));
+      c.data.labels = a.labels;
+      c.data.datasets[0].data = a.values;
+      c.data.datasets[1].data = monthly((r) => r.borrowing ?? 0).values;
+      c.data.datasets[2].data = monthly((r) => -(r.repayment ?? 0)).values;
+    },
+  },
+  {
     tab: 'etat', title: 'Fonction publique', desc: 'Enseignants employés par l’État (les médecins sont libéraux).',
     build: (c) => lineChart(c, [
       { label: 'Enseignants', color: '#319795' },
@@ -799,20 +918,38 @@ const tables: TableDef[] = [
     },
   },
   {
-    tab: 'etat', wide: true, title: 'Budget du mois écoulé',
+    tab: 'etat', wide: true, title: 'Budget voté et comptes du mois écoulé',
     render: (el) => {
       if (!snap) return;
       const r = snap.stateMonth.revenue as Record<string, number>;
       const s = snap.stateMonth.spending as Record<string, number>;
       const tr = Object.values(r).reduce((a, b) => a + b, 0);
       const ts = Object.values(s).reduce((a, b) => a + b, 0);
-      el.innerHTML = `<div class="form-grid"><div><table><thead><tr><th>Recettes</th><th class="num">Écus</th></tr></thead><tbody>
+      const bud = snap.budget;
+      const di = snap.debtInfo;
+      const last = history[history.length - 1];
+      const month = history.slice(-30);
+      const borrow = month.reduce((a, x) => a + (x.borrowing ?? 0), 0);
+      const repay = month.reduce((a, x) => a + (x.repayment ?? 0), 0);
+      const ruleTxt = bud ? `${FISCAL_RULES[bud.rule]}, voté ${dateLabel(bud.day)}` : 'pas encore voté (fin du premier mois)';
+      const budRows = bud ? Object.keys(SPEND_LABELS).filter((k) => (bud.needs as any)[k] || (bud.envelopes as any)[k]).map((k) => `<tr><td>${SPEND_LABELS[k]}</td><td class="num">${fmt((bud.needs as any)[k] / 100)}</td><td class="num">${fmt((bud.envelopes as any)[k] / 100)}</td></tr>`).join('') : '';
+      el.innerHTML = `<div class="form-grid"><div><table><thead><tr><th>Recettes fiscales (mois)</th><th class="num">Écus</th></tr></thead><tbody>
         ${Object.keys(REV_LABELS).map((k) => `<tr><td>${REV_LABELS[k]}</td><td class="num">${fmt((r[k] ?? 0) / 100)}</td></tr>`).join('')}
-        <tr><th>Total</th><th class="num">${fmt(tr / 100)}</th></tr></tbody></table></div>
-        <div><table><thead><tr><th>Dépenses</th><th class="num">Écus</th></tr></thead><tbody>
+        <tr><th>Total</th><th class="num">${fmt(tr / 100)}</th></tr>
+        <tr><td colspan="2" class="desc" style="padding-top:10px">Hors impôts</td></tr>
+        <tr><td>Emprunts levés</td><td class="num">${fmt(borrow)}</td></tr>
+        <tr><td>Obligations remboursées</td><td class="num">${fmt(-repay)}</td></tr></tbody></table></div>
+        <div><table><thead><tr><th>Dépenses (mois)</th><th class="num">Écus</th></tr></thead><tbody>
         ${Object.keys(SPEND_LABELS).map((k) => `<tr><td>${SPEND_LABELS[k]}</td><td class="num">${fmt((s[k] ?? 0) / 100)}</td></tr>`).join('')}
-        <tr><th>Total</th><th class="num">${fmt(ts / 100)}</th></tr></tbody></table></div></div>
-        <p class="desc">Solde : <b>${ecu((tr - ts) / 100)}</b>. Une monnaie fixe : tout excédent de l’État est de l’argent retiré du circuit, tout déficit est puisé dans sa trésorerie.</p>`;
+        <tr><th>Total</th><th class="num">${fmt(ts / 100)}</th></tr></tbody></table></div>
+        <div><table><thead><tr><th>Budget annuel (${esc(ruleTxt)})</th><th class="num">Besoins</th><th class="num">Voté</th></tr></thead><tbody>
+        ${budRows}
+        ${bud ? `<tr><th>Total</th><th class="num">${fmt(Object.values(bud.needs).reduce((a, b) => a + b, 0) / 100)}</th><th class="num">${fmt(bud.planned / 100)}</th></tr>
+        <tr><td>Recettes prévues</td><td></td><td class="num">${fmt(bud.revenue / 100)}</td></tr>
+        <tr><td>Déficit permis par la règle</td><td></td><td class="num">${fmt(bud.allowedDeficit / 100)}</td></tr>
+        <tr><td>Part des besoins financée (coupes &lt; 100 % &lt; relèvement)</td><td></td><td class="num">${pct(bud.cut)}</td></tr>` : ''}
+        </tbody></table></div></div>
+        <p class="desc">Solde fiscal du mois : <b>${ecu((tr - ts) / 100)}</b>. Dette : <b>${ecu(di.total)}</b> (${pct(last.debtRatio ?? 0, 1)} du PIB) en ${di.tranches} tranches, taux moyen ${pct(di.avgRate, 2)}${di.nextMaturity >= 0 ? `, prochaine échéance ${dateLabel(di.nextMaturity)} (${ecu(di.nextAmount)})` : ''} ; ${di.holdersAgents} placements de ménages, ${di.holdersBiz} d’entreprises. L’État ne crée pas d’écus : il emprunte l’épargne existante, la monnaie créée par la banque centrale ou celle venue de l’étranger.</p>`;
     },
   },
 ];
@@ -821,7 +958,7 @@ const tables: TableDef[] = [
 
 const TABS: [string, string][] = [
   ['ile', 'L’île'], ['apercu', 'Vue d’ensemble'], ['inegalites', 'Inégalités'], ['marches', 'Marchés'], ['emploi', 'Emploi et entreprises'],
-  ['demographie', 'Démographie'], ['sante', 'Santé'], ['etat', 'État'], ['ressources', 'Ressources'], ['habitants', 'Habitants'], ['modele', 'Le modèle'],
+  ['demographie', 'Démographie'], ['sante', 'Santé'], ['etat', 'État'], ['monnaie', 'Monnaie'], ['ressources', 'Ressources'], ['habitants', 'Habitants'], ['modele', 'Le modèle'],
 ];
 
 function buildViews() {
@@ -1099,7 +1236,7 @@ function renderAgent(d: any) {
       <dt>Âge</dt><dd>${d.age} ans — ${STATUS_LABEL[d.status] ?? d.status}</dd>
       <dt>Métier</dt><dd>${esc(d.job)} — ${esc(d.role)}</dd>
       <dt>Argent</dt><dd>${ecu(d.money, 2)}</dd>
-      <dt>Patrimoine</dt><dd>${ecu(d.wealth, 2)} (dont hérité : ${ecu(d.inherited)})</dd>
+      <dt>Patrimoine</dt><dd>${ecu(d.wealth, 2)} (dont hérité : ${ecu(d.inherited)}${d.bonds ? ` ; obligations d’État : ${ecu(d.bonds)}` : ''})</dd>
       <dt>Revenu</dt><dd>${fmt(d.income, 2)} é / jour (mois écoulé)</dd>
       <dt>Santé</dt><dd>${fmt(d.health)} / 100 ${d.sick ? '— malade' : ''} ${d.hunger > 0.1 ? `— faim ${pct(d.hunger)}` : ''} — ${d.insured ? 'assuré·e' : 'sans assurance privée'}</dd>
       <dt>Éducation</dt><dd>${pct(d.edu)}</dd>
@@ -1146,7 +1283,20 @@ const POLICY_GROUPS: [string, SliderDef[]][] = [
     { key: 'ubi', label: 'Revenu universel', min: 0, max: 10, step: 0.25, fmt: (v) => `${fmt(v, 2)} é/j`, help: 'Versé chaque jour à chaque adulte.' },
     { key: 'socialAidThreshold', label: 'Seuil de l’aide sociale', min: 0, max: 30, step: 1, fmt: (v) => `${v} é/pers.`, help: 'Un foyer dont l’épargne passe sous ce seuil (par membre) reçoit l’aide.' },
     { key: 'socialAidAmount', label: 'Montant de l’aide sociale', min: 0, max: 10, step: 0.25, fmt: (v) => `${fmt(v, 2)} é/j/pers.` },
-    { key: 'surplusDays', label: 'Réserve avant reversement', min: 0, max: 720, step: 30, fmt: (v) => (v ? `${v} j` : 'jamais'), help: 'Au-delà de N jours de dépenses, l’excédent est reversé à parts égales aux adultes. « Jamais » : l’État thésaurise.' },
+    { key: 'schoolMeals', label: 'Cantines scolaires', min: 0, max: 0.7, step: 0.05, fmt: (v) => (v ? `${fmt(v, 2)} / enfant / j` : 'aucune'), help: 'Nutrition fournie chaque jour à chaque enfant (pain et fruits achetés en gros par l’État). S’y ajoutent le bois pour chauffer l’école et des outils pour l’entretien.' },
+  ]],
+  ['Budget et dette', [
+    { key: 'deficitTarget', label: 'Déficit maximal', min: 0, max: 0.12, step: 0.005, fmt: pctF, help: 'Pour la règle « Déficit plafonné » : déficit permis chaque année, en part du PIB.' },
+    { key: 'debtCeiling', label: 'Plafond de dette', min: 0, max: 1, step: 0.05, fmt: (v) => (v ? `${pctF(v)} du PIB` : 'aucun'), help: 'Quelle que soit la règle : à l’approche du plafond, le déficit permis se réduit (un tiers de la marge restante par an) ; au-delà, l’État doit dégager un excédent.' },
+    { key: 'disasterRelief', label: 'Aide d’urgence', min: 0, max: 1, step: 0.05, fmt: (v) => (v ? `${pctF(v)} des pertes` : 'aucune'), help: 'Après une mauvaise récolte, une tempête ou un incendie, part des pertes estimées versée aux entreprises touchées. Empruntée hors règle budgétaire.' },
+    { key: 'foreignDebtCap', label: 'Dette extérieure (plafond)', min: 0, max: 0.5, step: 0.01, fmt: (v) => (v ? `${pctF(v)} du PIB` : 'île fermée'), help: 'Les investisseurs étrangers prêtent au taux mondial (3 %) plus la prime de risque, jusqu’à ce plafond. Leur argent entre dans l’île ; intérêts et remboursements en sortent.' },
+    { key: 'surplusDays', label: 'Dividende public au-delà de', min: 0, max: 720, step: 30, fmt: (v) => (v ? `${v} j de dépenses` : 'jamais'), help: 'Si la trésorerie dépasse N jours de dépenses, l’excédent est reversé à parts égales aux adultes. Utile seulement pour un État durablement excédentaire et sans dette (sinon il retire de la monnaie du circuit).' },
+  ]],
+  ['Monnaie et banques', [
+    { key: 'inflationTarget', label: 'Cible d’inflation', min: 0, max: 0.1, step: 0.005, fmt: pctF, help: 'La banque centrale fixe son taux directeur (règle de Taylor) et achète des obligations d’État avec de la monnaie nouvelle quand l’inflation est sous la cible.' },
+    { key: 'cbFinancing', label: 'Financement monétaire (max.)', min: 0, max: 1, step: 0.05, fmt: (v) => (v ? `${pctF(v)} de la dette` : 'interdit'), help: 'Part maximale de la dette publique que la banque centrale peut détenir. Elle sert aussi de prêteur en dernier ressort quand une enchère échoue. 0 : comme un traité qui interdit de financer l’État.' },
+    { key: 'creditLimit', label: 'Crédit bancaire (plafond)', min: 0, max: 0.6, step: 0.01, fmt: (v) => (v ? `${pctF(v)} du PIB` : 'pas de crédit'), help: 'Encours maximal des prêts aux entreprises. Un prêt crée de la monnaie, son remboursement la détruit.' },
+    { key: 'bankSpread', label: 'Marge de la banque', min: 0, max: 0.15, step: 0.005, fmt: pctF, help: 'Taux des crédits = taux directeur + marge. Les intérêts sont reversés aux déposants (90 %) ou gardés en fonds propres.' },
   ]],
   ['Santé : sécurité sociale', [
     { key: 'secuContribution', label: 'Cotisation santé', min: 0, max: 0.15, step: 0.005, fmt: pctF, help: 'Prélevée chaque mois sur tous les revenus (y compris pensions).' },
@@ -1172,11 +1322,11 @@ const PRESETS: Record<string, { label: string; p: Partial<Policy> }> = {
   defaut: { label: 'Par défaut', p: DEFAULT_POLICY },
   laisser: {
     label: 'Laisser-faire',
-    p: { incomeTaxLow: 0.03, incomeTaxHigh: 0.03, vat: 0.03, corporateTax: 0, wealthTax: 0, inheritanceTax: 0, teachersPer1000: 3, pension: 0, ubi: 0, socialAidAmount: 0, minWage: 0, shopRent: 0.5, secuRate: 0, secuRatePoor: 0, secuContribution: 0, insuranceMandatory: false, insuranceRiskRating: 1, premiumIncomeCap: 0, insuranceMinLossRatio: 0 },
+    p: { incomeTaxLow: 0.03, incomeTaxHigh: 0.03, vat: 0.03, corporateTax: 0, wealthTax: 0, inheritanceTax: 0, teachersPer1000: 3, pension: 0, ubi: 0, socialAidAmount: 0, minWage: 0, shopRent: 0.5, secuRate: 0, secuRatePoor: 0, secuContribution: 0, insuranceMandatory: false, insuranceRiskRating: 1, premiumIncomeCap: 0, insuranceMinLossRatio: 0, fiscalRule: 'equilibre', schoolMeals: 0, disasterRelief: 0 },
   },
   providence: {
     label: 'État-providence',
-    p: { incomeTaxLow: 0.15, incomeTaxHigh: 0.45, incomeTaxThreshold: 120, vat: 0.12, corporateTax: 0.3, wealthTax: 0.02, wealthTaxThreshold: 1500, inheritanceTax: 0.5, teachersPer1000: 14, pension: 3.5, socialAidThreshold: 10, socialAidAmount: 3, minWage: 3.5, ubi: 0.5, secuRate: 1, secuTariff: 12, secuContribution: 0.05 },
+    p: { incomeTaxLow: 0.15, incomeTaxHigh: 0.45, incomeTaxThreshold: 120, vat: 0.12, corporateTax: 0.3, wealthTax: 0.02, wealthTaxThreshold: 1500, inheritanceTax: 0.5, teachersPer1000: 14, pension: 3.5, socialAidThreshold: 10, socialAidAmount: 3, minWage: 3.5, ubi: 0.5, secuRate: 1, secuTariff: 12, secuContribution: 0.05, fiscalRule: 'cibleDeficit', deficitTarget: 0.05, debtCeiling: 0.4, schoolMeals: 0.5, disasterRelief: 0.8 },
   },
   assurance: {
     label: 'Assurance obligatoire',
@@ -1195,6 +1345,11 @@ function buildSidebar() {
     }
     if (group === 'Dépenses publiques') {
       html += `<label class="check"><input type="checkbox" id="s_indexation" /> <span>Indexation sur les prix<br><span class="help" style="color:var(--muted);font-size:11.5px">Pensions, aides, salaires publics et minimum suivent l’IPC.</span></span></label>`;
+    }
+    if (group === 'Budget et dette') {
+      html = html.replace(`<h2>${group}</h2>`, `<h2>${group}</h2><div class="slider"><div class="row"><span class="name">Règle budgétaire</span></div>
+        <select id="s_fiscalRule">${(Object.keys(FISCAL_RULES) as FiscalRule[]).map((k) => `<option value="${k}">${FISCAL_RULES[k]}</option>`).join('')}</select>
+        <div class="help">Chaque début d’année, l’État chiffre ses besoins et prévoit ses recettes (12 derniers mois). <b>Équilibre</b> : pas de déficit. <b>Déficit plafonné</b> : déficit jusqu’au maximum ci-dessous. <b>Frein à l’endettement</b> (à la suisse) : équilibre sur le cycle, déficit permis quand le PIB est sous sa tendance, excédent exigé au-dessus. L’État dépense ses recettes plus le déficit permis, réparti au prorata des besoins : moins que les besoins → coupes ; plus → pensions, aides, soins, achats et postes relevés (jusqu’à +30 %). Changement de 15 points au plus par an. Le déficit est emprunté aux enchères.</div></div>`);
     }
     if (group === 'Santé : assurance privée') {
       html += `<label class="check"><input type="checkbox" id="s_insuranceMandatory" /> <span>Assurance obligatoire<br><span class="help" style="color:var(--muted);font-size:11.5px">Chaque foyer prend le contrat le moins cher. Sinon, on s’assure si la prime vaut le risque perçu.</span></span></label>`;
@@ -1221,6 +1376,10 @@ function buildSidebar() {
     policy.insuranceMandatory = (e.target as HTMLInputElement).checked;
     pushPolicy(true);
   });
+  ($('s_fiscalRule') as HTMLSelectElement).addEventListener('change', (e) => {
+    policy.fiscalRule = (e.target as HTMLSelectElement).value as FiscalRule;
+    pushPolicy(true);
+  });
   sb.querySelectorAll('[data-preset]').forEach((b) => b.addEventListener('click', () => {
     const k = (b as HTMLElement).dataset.preset!;
     policy = { ...DEFAULT_POLICY, ...PRESETS[k].p };
@@ -1240,6 +1399,7 @@ function syncSidebar() {
   }
   ($('s_indexation') as HTMLInputElement).checked = policy.indexation;
   ($('s_insuranceMandatory') as HTMLInputElement).checked = policy.insuranceMandatory;
+  ($('s_fiscalRule') as HTMLSelectElement).value = policy.fiscalRule;
 }
 
 let policyTimer = 0;
@@ -1254,6 +1414,7 @@ function policyDiff(): string {
   }
   if (policy.indexation !== sentPolicy.indexation) out.push(`indexation ${policy.indexation ? 'activée' : 'désactivée'}`);
   if (policy.insuranceMandatory !== sentPolicy.insuranceMandatory) out.push(`assurance ${policy.insuranceMandatory ? 'obligatoire' : 'facultative'}`);
+  if (policy.fiscalRule !== sentPolicy.fiscalRule) out.push(`règle budgétaire : ${FISCAL_RULES[policy.fiscalRule]}`);
   return out.join(' ; ');
 }
 /**
@@ -1295,8 +1456,9 @@ function renderKpis() {
     ['Faim', pct(hunger30, 1), 'nourris à moins de 90 %', hunger30 > 0.05 ? 'bad' : hunger30 < 0.01 ? 'good' : ''],
     ['Santé moyenne', fmt(k.avgHealth), 'sur 100'],
     ['Trésor public', ecu(k.treasury), `payé ${pct(history[history.length - 1].paidRatio)}`],
+    ['Dette publique', pct(k.debtRatio ?? 0, 1), `du PIB · ${ecu(k.debt ?? 0)} · taux ${pct(k.lastRate ?? 0, 1)}`, (k.debtRatio ?? 0) > 0.5 || (k.lastRate ?? 0) > 0.1 ? 'bad' : ''],
     ['Entreprises', fmt(k.firms), `≥ 2 personnes`],
-    ['Masse monétaire', ecu(k.moneyTotal), k.moneyError === 0 ? 'conservée ✓' : `écart ${fmt(k.moneyError, 2)} !`, k.moneyError === 0 ? '' : 'bad'],
+    ['Masse monétaire', ecu(k.moneyTotal), k.moneyError === 0 ? `dont créée ${ecu(k.moneyCreated ?? 0)} · comptes justes ✓` : `écart ${fmt(k.moneyError, 2)} !`, k.moneyError === 0 ? '' : 'bad'],
   ];
   $('kpis').innerHTML = cards.map(([l, v, s, cls]) => `<div class="kpi ${cls ?? ''}"><div class="label">${l}</div><div class="value">${v}</div><div class="sub">${s}</div></div>`).join('');
   const ev = snap.events.map((e) => `${e.label} (${e.daysLeft} j)`).join(', ');
@@ -1505,7 +1667,7 @@ function buildModel(v: HTMLElement) {
   card.className = 'card wide prose';
   card.innerHTML = `
   <h3>Comment fonctionne l’île</h3>
-  <p>Un pas de simulation = un jour (un mois = 30 jours, un an = 360). L’île démarre avec ${init.population} habitants et une <b>masse monétaire fixe</b> : ${init.moneyPerInhabitant} écus par habitant, distribués à égalité (${Math.round(init.stateShare * 100)} % vont à l’État). Aucun écu n’est créé ni détruit ; l’indicateur « masse monétaire » le vérifie à chaque jour.</p>
+  <p>Un pas de simulation = un jour (un mois = 30 jours, un an = 360). L’île démarre avec ${init.population} habitants et ${init.moneyPerInhabitant} écus par habitant, distribués à égalité (${Math.round(init.stateShare * 100)} % vont à l’État). Ensuite, de la monnaie n’est créée ou détruite que par la banque centrale, la banque et les échanges avec l’étranger (voir « Monnaie, banques et dette extérieure ») ; l’indicateur « masse monétaire » vérifie chaque jour que les comptes tombent juste, au centime près.</p>
   <h3>Les filières</h3>
   <ul>
     <li><b>Producteurs</b> : céréaliers (blé), pêcheurs (poisson frais), éleveurs (lait + bétail), aviculteurs (œufs), arboriculteurs (fruits), bûcherons (bois). La terre a une capacité limitée (rendements décroissants au-delà) ; le poisson et la forêt sont des stocks qui se renouvellent (croissance logistique) et peuvent être surexploités.</li>
@@ -1537,7 +1699,15 @@ function buildModel(v: HTMLElement) {
   <p>La facture est partagée : la <b>sécurité sociale</b> paie un pourcentage d’un tarif de référence (financée par une cotisation sur tous les revenus), et peut prendre en charge les honoraires des foyers modestes ; l’<b>assureur</b> du foyer paie une part de ce qui reste ; le foyer paie le solde. Pour une maladie, il accepte d’y consacrer une grosse part de son épargne ; pour un suivi, seulement une petite part de ce qui dépasse son épargne de précaution. Sinon il <b>renonce aux soins</b>.</p>
   <p>Les <b>assureurs</b> fixent une prime par unité de risque (un adulte de 40 à 59 ans = 1 ; un enfant 0,5, un jeune adulte 0,6, 60–74 ans 2,2, 75 ans et plus 3,5 ; la réglementation peut écraser ces écarts). Leur prime couvre les sinistres attendus (statistiques de la population, puis leur propre expérience), leurs frais (un assureur gère environ 1000 personnes) et une marge, qui monte quand ils sont pleins et baisse quand ils perdent des clients. Ils gardent deux mois de sinistres en réserve. Chaque mois, un foyer sur quatre réexamine son contrat : il s’assure si la prime ne dépasse pas ce qu’il espère se faire rembourser, majoré de son aversion au risque (plus forte s’il est pauvre face à une maladie grave), et s’il peut la payer. Il connaît son risque mieux que l’assureur : avec une prime unique, les jeunes en bonne santé partent, les primes montent, d’autres partent… c’est l’<b>antisélection</b>. L’assurance obligatoire l’empêche ; le subside rend la prime abordable aux revenus modestes.</p>
   <h3>L’État</h3>
-  <p>Il prélève impôt sur le revenu (deux tranches, mensuel), cotisation santé, TVA, impôt sur les sociétés, impôt sur la fortune, droits de succession et taxe sur les locaux. Il paie les enseignants, les pensions, l’aide sociale et le revenu universel, dans cet ordre de priorité ; s’il manque d’argent, il paie au prorata. Les remboursements de soins et les subsides aux primes sont payés au fil de l’eau, tant que la caisse le permet. Avec la règle de reversement, l’excédent au-delà de N jours de dépenses est rendu aux adultes : sans elle, un État excédentaire retire de la monnaie du circuit et provoque une déflation.</p>
+  <p>Il prélève impôt sur le revenu (deux tranches, mensuel), cotisation santé, TVA, impôt sur les sociétés, impôt sur la fortune, droits de succession et taxe sur les locaux. Il paie les enseignants, les pensions, l’aide sociale et le revenu universel, dans cet ordre de priorité ; s’il manque d’argent, il paie au prorata. Les remboursements de soins et les subsides aux primes sont payés au fil de l’eau, tant que la caisse le permet. Il achète aussi en gros, comme une entreprise : pain et fruits pour les cantines (distribués aux foyers avec enfants), bois pour l’école, outils pour l’entretien.</p>
+  <p><b>Le budget.</b> Chaque début d’année, l’État chiffre ses besoins (effectifs × montants pour les pensions et les salaires, douze derniers mois pour les aides, les soins et les achats, intérêts de la dette) et prévoit ses recettes (moyenne des douze derniers mois). La <b>règle budgétaire</b> fixe le déficit permis : aucun (équilibre), un pourcentage du PIB (déficit plafonné), ou un déficit qui dépend de la conjoncture (frein à l’endettement : on peut s’endetter quand le PIB est sous sa tendance, on rembourse au-dessus). Un plafond de dette resserre la règle à son approche. L’État dépense ses recettes prévues plus le déficit permis : si c’est moins que les besoins, toutes les enveloppes sont réduites au prorata (pensions, aides, remboursements, achats, postes d’enseignants) ; si c’est plus, elles sont relevées au prorata (jusqu’à 130 % des besoins). L’ajustement est étalé (15 points au plus par an) ; les intérêts, eux, sont toujours dus. Sans dette, l’État ne thésaurise pas : une trésorerie au-delà de deux mois de dépenses est remise en circulation l’année suivante. Après une catastrophe, l’aide d’urgence est empruntée hors règle.</p>
+  <p><b>La dette.</b> Chaque mois, l’État rembourse les obligations échues et emprunte de quoi tenir le mois suivant (quelques semaines de dépenses en caisse). Il émet des obligations à un an, coupon mensuel, par <b>enchère</b> : les foyers qui ont de l’épargne au-delà d’un mois de dépenses, et les entreprises qui ont de la trésorerie oisive, proposent une somme et un taux. Plus leur patrimoine est déjà placé en obligations, plus ils exigent un taux élevé ; tous exigent une prime de risque qui grimpe avec la dette / PIB et après une crise. Le taux retenu est celui du dernier prêteur servi. Si l’épargne ne suffit pas, l’enchère échoue : l’État ne crée pas de monnaie, il ne paie pas tout.</p>
+  <p><b>Qui finance un déficit ?</b> Chaque écu dépensé par l’État au-delà de ses impôts vient d’un ménage ou d’une entreprise qui le lui a prêté, de la banque centrale qui crée la monnaie pour l’acheter, ou de l’étranger. Sans banque centrale ni étranger, le déficit public est exactement l’épargne placée par le privé (graphique « Soldes des secteurs » : la somme est toujours nulle). On voit alors : un <b>transfert vers les riches</b>, car ce sont eux qui ont de l’épargne à placer et qui touchent les intérêts (graphique « Qui détient la dette ? ») ; un <b>effet d’éviction</b>, car l’argent prêté à l’État n’achète plus rien d’autre et les taux montent quand l’épargne disponible s’épuise ; et la possibilité d’une <b>spirale</b> : plus de dette → prime de risque plus haute → plus d’intérêts → plus de déficit, jusqu’à l’enchère ratée et aux coupes forcées. À l’inverse, un État durablement excédentaire et sans dette thésaurise de la monnaie et fait baisser les prix : le « dividende public » (désactivé par défaut) reverse alors l’excédent aux habitants.</p>
+  <h3>Monnaie, banques et dette extérieure</h3>
+  <p><b>La banque centrale</b> vise une inflation (2 % par an par défaut). Son <b>taux directeur</b> suit une règle de Taylor : 2 % + l’inflation + la moitié de l’écart à la cible. Quand les prix montent moins vite que la cible, elle achète des obligations d’État aux enchères avec de la <b>monnaie nouvelle</b> ; quand ils montent trop, elle cesse d’acheter, et la monnaie qui lui est remboursée à l’échéance est détruite. Si une enchère échoue, elle achète le reste (prêteur en dernier ressort), dans la limite du « financement monétaire ». Ses bénéfices (les intérêts qu’elle reçoit) reviennent à l’État.</p>
+  <p><b>La banque</b> prête aux entreprises rentables qui manquent de trésorerie, veulent embaucher ou s’équiper, au taux directeur plus une marge, sur deux ans, si la mensualité ne dépasse pas 30 % de leur valeur ajoutée. Le prêt <b>crée</b> un dépôt (de la monnaie), le remboursement le <b>détruit</b>. Les intérêts vont aux déposants, au prorata de leur épargne. Un emprunteur qui ne paie pas trois mois de suite fait défaut : la banque perd le capital, la monnaie déjà dépensée reste en circulation.</p>
+  <p><b>L’étranger</b> prête à l’État au taux mondial (3 %) plus la prime de risque, jusqu’à un plafond. Son argent entre dans l’île ; les intérêts et les remboursements en sortent : une dette extérieure finit par retirer de la monnaie du circuit, comme un pays qui exporte pour payer ses créanciers.</p>
+  <p>Ce qu’on peut voir : un crédit facile accélère les embauches mais gonfle la masse monétaire ; une banque centrale qui finance l’État sans limite fait monter les prix ; une dette extérieure lourde draine la monnaie (déflation, faillites) ; une île fermée, sans création monétaire, dépend entièrement de l’épargne de ses habitants les plus riches.</p>
   <h3>Remonter le temps, comparer des scénarios</h3>
   <p>La simulation garde un instantané complet de l’île chaque mois pendant la dernière année, puis un par an. Faites glisser la <b>ligne du temps</b> pour revoir l’île et les graphiques à une date passée. « Reprendre d’ici » crée une <b>branche</b> : l’histoire repart de ce jour, et l’ancienne reste intacte. Modifier un levier pendant qu’on regarde le passé crée aussi une branche. Choisissez une autre branche dans « Comparer avec » pour voir ses courbes en pointillés sur les mêmes graphiques.</p>
   <p>Chaque décision (levier relâché, préréglage) et chaque événement posent un repère vertical sur les graphiques et sur la ligne du temps, pour lire l’avant et l’après. Les instantanés tiennent en mémoire dans l’onglet du navigateur : recharger la page repart de zéro.</p>
@@ -1548,7 +1718,7 @@ function buildModel(v: HTMLElement) {
     <li>Des <b>crises alimentaires</b> peuvent émerger quand trop de producteurs partent vers des métiers mieux payés : les pauvres sont touchés en premier.</li>
     <li>La surpêche quand le poisson est cher, l’effet des quotas, l’effet des impôts et des aides sur la pauvreté et la concentration du capital.</li>
   </ul>
-  <p class="desc">Limites de la v1 : pas de crédit ni de banque, pas de logement, pas de commerce extérieur, un seul type d’artisanat, des comportements simples (pas d’anticipation).</p>`;
+  <p class="desc">Limites de la v1 : pas de crédit privé ni de banque (seul l’État emprunte, sans marché secondaire : on garde ses obligations jusqu’à l’échéance), pas de logement, pas de commerce extérieur, un seul type d’artisanat, des comportements simples (pas d’anticipation).</p>`;
   v.appendChild(card);
 }
 

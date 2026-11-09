@@ -134,6 +134,26 @@ export const K = {
   comfortWear: 0.01,
   /** Jours de nourriture gardés en épargne de précaution avant toute dépense de confort. */
   savingsBufferDays: 20,
+  /** Trésorerie visée par l'État, en jours de dépenses : il emprunte pour la maintenir. */
+  treasuryDays: 20,
+  /** Durée des obligations d'État (jours) ; coupon versé chaque mois. */
+  bondMaturity: 360,
+  /** Coussin de précaution d'un ménage avant de placer son épargne (jours de dépenses). */
+  bondCushionDays: 30,
+  /** Taux maximal que l'État accepte de payer lors d'une enchère (annuel). */
+  bondMaxRate: 0.25,
+  /** Taux auquel les investisseurs étrangers prêtent à un État sans risque (annuel). */
+  worldRate: 0.03,
+  /** Durée des crédits bancaires (mois, remboursement à annuités constantes en capital). */
+  loanMonths: 24,
+};
+
+export type FiscalRule = 'equilibre' | 'cibleDeficit' | 'freinDette';
+
+export const FISCAL_RULES: Record<FiscalRule, string> = {
+  equilibre: 'Équilibre',
+  cibleDeficit: 'Déficit plafonné',
+  freinDette: 'Frein à l’endettement',
 };
 
 export interface Policy {
@@ -166,7 +186,19 @@ export interface Policy {
   premiumIncomeCap: number; // subside : la prime d'un foyer ne dépasse pas cette part de son revenu (0 = pas de subside)
   insuranceMinLossRatio: number; // part minimale des primes reversée en soins, le surplus est remboursé (0 = libre)
   indexation: boolean; // pensions, aides, salaires publics et minimum suivent l'IPC
-  surplusDays: number; // au-delà de N jours de dépenses, l'excédent est reversé aux habitants (0 = jamais)
+  surplusDays: number; // au-delà de N jours de dépenses en trésorerie, l'excédent est reversé aux habitants (0 = jamais)
+  schoolMeals: number; // cantines : nutrition fournie par enfant et par jour (pain et fruits achetés en gros)
+  // Budget et dette
+  fiscalRule: FiscalRule; // règle budgétaire appliquée au budget annuel
+  deficitTarget: number; // déficit maximal (part du PIB annuel) pour la règle « cibleDeficit »
+  debtCeiling: number; // plafond de dette (part du PIB annuel), 0 = aucun ; s'applique à toutes les règles
+  disasterRelief: number; // aide d'urgence après une catastrophe, part des pertes estimées
+  // Monnaie, banques et dette extérieure
+  inflationTarget: number; // cible d'inflation annuelle de la banque centrale
+  cbFinancing: number; // part maximale de la dette publique que la banque centrale peut détenir (0 = interdit)
+  creditLimit: number; // encours maximal des crédits bancaires aux entreprises (part du PIB), 0 = pas de crédit
+  bankSpread: number; // marge de la banque au-dessus du taux directeur (annuelle)
+  foreignDebtCap: number; // part maximale de la dette détenue à l'étranger (part du PIB), 0 = île fermée
   // Réglementation
   minWage: number; // écus / jour
   shopRent: number; // écus / jour / commerce (taxe sur les locaux)
@@ -175,23 +207,23 @@ export interface Policy {
 }
 
 export const DEFAULT_POLICY: Policy = {
-  incomeTaxLow: 0.1,
-  incomeTaxHigh: 0.25,
+  incomeTaxLow: 0.08,
+  incomeTaxHigh: 0.22,
   incomeTaxThreshold: 150,
-  vat: 0.1,
-  corporateTax: 0.15,
+  vat: 0.09,
+  corporateTax: 0.1,
   wealthTax: 0,
   wealthTaxThreshold: 2000,
   inheritanceTax: 0.2,
-  teachersPer1000: 10,
-  publicSalary: 5,
-  pension: 2.5,
+  teachersPer1000: 12,
+  publicSalary: 5.5,
+  pension: 3.5,
   retirementAge: 65,
   ubi: 0,
-  socialAidThreshold: 5,
-  socialAidAmount: 2,
+  socialAidThreshold: 8,
+  socialAidAmount: 2.5,
   secuContribution: 0.02,
-  secuRate: 0.7,
+  secuRate: 0.8,
   secuTariff: 4,
   secuRatePoor: 1,
   insuranceMandatory: false,
@@ -200,7 +232,17 @@ export const DEFAULT_POLICY: Policy = {
   premiumIncomeCap: 0,
   insuranceMinLossRatio: 0,
   indexation: true,
-  surplusDays: 30,
+  surplusDays: 0,
+  schoolMeals: 0.4,
+  fiscalRule: 'cibleDeficit',
+  deficitTarget: 0.03,
+  debtCeiling: 0.2,
+  disasterRelief: 0.5,
+  inflationTarget: 0.02,
+  cbFinancing: 0.3,
+  creditLimit: 0.15,
+  bankSpread: 0.03,
+  foreignDebtCap: 0.05,
   minWage: 2.5,
   shopRent: 1.5,
   fishingQuota: 0,
