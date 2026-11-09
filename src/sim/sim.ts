@@ -1,6 +1,6 @@
 import {
   DEFAULT_INIT, DEFAULT_POLICY, EVENT_DEFS, FOOD_GOODS, GOODS, GOOD_DEFS, JOBS, JOB_DEFS, K,
-  MARKET_JOBS, PUBLIC_JOBS, RETAIL_GOODS, RETAIL_MARGIN0,
+  EMISSIONS, ENERGY_JOBS, MARKET_JOBS, PUBLIC_JOBS, RETAIL_GOODS, RETAIL_MARGIN0,
   type EventKind, type FiscalRule, type Good, type InitConfig, type Job, type JobCategory, type Policy,
 } from './config';
 import { callAuction, type Order } from './market';
@@ -145,9 +145,14 @@ export interface Budget {
   cut: number; // part des besoins financée (1 = tout)
 }
 
-type RevKey = 'tva' | 'impotRevenu' | 'impotSocietes' | 'impotFortune' | 'succession' | 'loyers' | 'cotisationsSante' | 'dividendes' | 'profitsBC';
-type SpendKey = 'salaires' | 'pensions' | 'aideSociale' | 'revenuUniversel' | 'remboursementsSante' | 'subsidesPrimes' | 'achats' | 'aideUrgence' | 'interets' | 'redistribution';
-export const REV_KEYS: RevKey[] = ['tva', 'impotRevenu', 'impotSocietes', 'impotFortune', 'succession', 'loyers', 'cotisationsSante', 'dividendes', 'profitsBC'];
+type RevKey = 'tva' | 'impotRevenu' | 'impotSocietes' | 'impotFortune' | 'succession' | 'loyers' | 'cotisationsSante' | 'dividendes' | 'profitsBC' | 'taxeCarbone' | 'ventesPubliques';
+type SpendKey =
+  | 'education' | 'administration' | 'securite' | 'santePublique' | 'environnement'
+  | 'pensions' | 'aideSociale' | 'allocationsFamiliales' | 'indemnitesMaladie' | 'chomage' | 'revenuUniversel'
+  | 'remboursementsSante' | 'subsidesPrimes'
+  | 'cantines' | 'investissement' | 'logement' | 'culture' | 'agriculture'
+  | 'aideUrgence' | 'interets' | 'redistribution';
+export const REV_KEYS: RevKey[] = ['tva', 'impotRevenu', 'impotSocietes', 'impotFortune', 'succession', 'loyers', 'cotisationsSante', 'dividendes', 'profitsBC', 'taxeCarbone', 'ventesPubliques'];
 /** Détenteurs spéciaux d'obligations : banque centrale et investisseurs étrangers. */
 export const CB_KEY = -1;
 export const FOREIGN_KEY = -1e9;
@@ -162,7 +167,22 @@ export interface Loan {
   monthsLeft: number;
   missed: number;
 }
-export const SPEND_KEYS: SpendKey[] = ['salaires', 'pensions', 'aideSociale', 'revenuUniversel', 'remboursementsSante', 'subsidesPrimes', 'achats', 'aideUrgence', 'interets', 'redistribution'];
+export const SPEND_KEYS: SpendKey[] = [
+  'education', 'administration', 'securite', 'santePublique', 'environnement',
+  'pensions', 'aideSociale', 'allocationsFamiliales', 'indemnitesMaladie', 'chomage', 'revenuUniversel',
+  'remboursementsSante', 'subsidesPrimes',
+  'cantines', 'investissement', 'logement', 'culture', 'agriculture',
+  'aideUrgence', 'interets', 'redistribution',
+];
+/** Poste budgétaire des salaires de chaque fonction publique, et levier qui en fixe l'effectif (pour 1000 habitants). */
+export const STAFF_KEY: Record<string, SpendKey> = { enseignant: 'education', administrateur: 'administration', policier: 'securite', infirmier: 'santePublique', garde: 'environnement', cantonnier: 'investissement' };
+const STAFF_POLICY: Record<string, keyof Policy> = { enseignant: 'teachersPer1000', administrateur: 'adminPer1000', policier: 'policePer1000', infirmier: 'nursesPer1000', garde: 'rangersPer1000' };
+/** Producteurs qui équipent leurs travailleurs de machines alimentées en énergie. */
+const MECHANIZED: Job[] = ['cerealier', 'pecheur', 'eleveur', 'aviculteur', 'arboriculteur', 'bucheron'];
+/** Postes hors règle budgétaire (exceptionnels ou contreparties) : ni besoins chiffrés ni coupes. */
+const OFF_BUDGET: SpendKey[] = ['aideUrgence', 'interets', 'redistribution'];
+/** Achat public en cours : bien, quantité voulue, poste budgétaire. */
+interface PublicOrder { k: SpendKey; g: Good; q: number }
 export type { RevKey, SpendKey };
 
 export type FlowNode = 'menages' | 'production' | 'transformation' | 'commerce' | 'sante' | 'assurance' | 'etat';
@@ -262,6 +282,29 @@ export interface DayStats {
   foreignDebt: number;
   /** Fonds propres de la banque (écus). */
   bankEquity: number;
+  /** Énergie produite par source et consommée (unités/jour), émissions du jour, pollution / référence, gisements restants (part). */
+  energyBySource: { petrole: number; gaz: number; vert: number };
+  energyUse: { machines: number; menages: number };
+  emissions: number;
+  pollution: number;
+  oilLeft: number;
+  gasLeft: number;
+  /** Services publics : effectif rapporté à la référence (1 = niveau par défaut) ; part des impôts perçue. */
+  staffCov: { administration: number; police: number; sante: number; nature: number; ecoles: number };
+  taxEff: number;
+  /** Équipements publics : infrastructures / référence, logements sociaux, capacité des terres (+ part), blé en silo. */
+  infraCov: number;
+  socialHousing: number;
+  landBonus: number;
+  siloStock: number;
+  schoolCov: number;
+  cultureCov: number;
+  /** Vols du jour, habitants qui ont froid, foyers sous le seuil de l'aide sociale (part), âge cumulé des décès, décès avant 1 an. */
+  thefts: number;
+  coldRate: number;
+  poorRate: number;
+  deathAges: number;
+  infantDeaths: number;
 }
 
 export interface Snapshot {
@@ -370,7 +413,14 @@ export class Simulation {
   /** Capacité totale par produit (unités/jour) et capacité totale des commerces. */
   private capByGood: Record<Good, number> = Object.fromEntries(GOODS.map((g) => [g, 0])) as Record<Good, number>;
   private shopCapTotal = 1;
-  cpiBase = 0;
+  /**
+   * IPC chaîné (base 100 au jour 1) : variation quotidienne des prix de détail pondérée par la part de
+   * chaque bien dans les dépenses récentes des ménages (nourriture, chauffage). Un panier à poids fixes
+   * surestimait l'inflation quand un bien devenu rare et cher (poisson) n'était presque plus acheté,
+   * et l'indexation faisait alors exploser pensions et aides.
+   */
+  cpiChain = 100;
+  private cpiShare: Partial<Record<Good, number>> = { pain: 0.33, poisson_prep: 0.14, viande: 0.11, fromage: 0.08, lait: 0.08, oeufs: 0.09, fruits: 0.11, bois: 0.03, energie: 0.03 };
   sectorIncome: Record<Job, number> = zeroJobs(); // centimes / jour
   /** Revenu moyen d'un actif (centimes/jour) : sert de « coût du travail » de référence. */
   avgIncome = 400;
@@ -407,7 +457,7 @@ export class Simulation {
   /** Besoins de dépenses du mois (avant coupes), pour estimer le budget suivant. */
   private needMonth: Record<SpendKey, number> = zeroSpend();
   /** Comptes mensuels (centimes) : recettes, dépenses, PIB, besoins ; 48 derniers mois. */
-  monthLog: { rev: number; spend: number; gdp: number; ix: number; cut: number; bought: number; needs: Record<SpendKey, number> }[] = [];
+  monthLog: { rev: number; spend: number; gdp: number; ix: number; cut: number; bought: Record<SpendKey, number>; needs: Record<SpendKey, number> }[] = [];
   private monthGdp = 0;
   /** Tension sur la dette (0..1) : monte après une enchère ratée ou un défaut, puis retombe. */
   debtStress = 0;
@@ -419,6 +469,33 @@ export class Simulation {
   pendingRelief: { biz: number; left: number; daily: number }[] = [];
   /** Achats publics : prix d'achat appris par bien (centimes). */
   private stateBid: Partial<Record<Good, number>> = {};
+  /** Achats publics livrés dans le mois, par poste (centimes) : base des besoins d'achats du budget. */
+  private boughtMonth: Record<SpendKey, number> = zeroSpend();
+
+  // --- services publics, infrastructures, environnement, énergie
+  /** Infrastructures publiques (écus aux prix de départ). */
+  infra = 0;
+  /** Logements sociaux (nombre) et foyers qui y vivent (id du chef de foyer). */
+  housing = 0;
+  housed = new Set<number>();
+  /** Capacité supplémentaire des terres apportée par l'irrigation et le défrichement (part). */
+  landBonus = 0;
+  /** Couverture (0..1,5) du matériel scolaire et de l'offre culturelle, moyennes mobiles des livraisons. */
+  schoolCov = 1;
+  cultureCov = 1;
+  /** Silo public de blé. */
+  silo: Inventory = new Map();
+  /** Recensement du jour : population, enfants, fonctionnaires présents par métier, facteur de maladie. */
+  popN = 1;
+  kidsN = 0;
+  staffN: Record<string, number> = {};
+  private envSick = 1;
+  /** Part des impôts directs effectivement perçue (administration fiscale). */
+  taxEff = 1;
+  /** Gisements restants, pollution accumulée. */
+  oilReserve = K.oilReserve;
+  gasReserve = K.gasReserve;
+  pollution = 0;
   private lastDebtHolders = [0, 0, 0, 0, 0, 0, 0, 0];
 
   // --- monnaie, banques, reste du monde
@@ -451,10 +528,9 @@ export class Simulation {
     this.rng = new Rng(this.init.seed);
     this.lastW = Object.fromEntries(GOODS.map((g) => [g, GOOD_DEFS[g].wholesale0])) as Record<Good, number>;
     this.lastR = Object.fromEntries(GOODS.map((g) => [g, (GOOD_DEFS[g].wholesale0 + RETAIL_MARGIN0) * (1 + this.policy.vat)])) as Record<Good, number>;
-    for (const g of RETAIL_GOODS) this.retailDemand[g] = g === 'bois' ? 100 : g === 'artisanat' ? 150 : 400;
+    for (const g of RETAIL_GOODS) this.retailDemand[g] = g === 'bois' ? 100 : g === 'energie' ? 50 : g === 'artisanat' ? 150 : 400;
     for (const j of JOBS) this.sectorVA[j] = 400;
     this.populate();
-    this.cpiBase = this.cpiRaw();
     this.recordStats();
   }
 
@@ -481,6 +557,15 @@ export class Simulation {
       careSpend: { menages: 0, secu: 0, assurance: 0 },
       borrowing: 0,
       repayment: 0,
+      energyBySource: { petrole: 0, gaz: 0, vert: 0 },
+      energyUse: { machines: 0, menages: 0 },
+      emissions: 0,
+      thefts: 0,
+      siloTrade: 0,
+      cold: 0,
+      deathAges: 0,
+      infantDeaths: 0,
+      taxGap: 0,
     };
   }
 
@@ -535,7 +620,7 @@ export class Simulation {
         const share = (a.prefs[g] ?? 0) / FOOD_GOODS.reduce((s, x) => s + (a.prefs[x] ?? 0), 0);
         invAdd(a.food, g, (need * 2 * share) / GOOD_DEFS[g].nutrition, GOOD_DEFS[g].shelf);
       }
-      invAdd(a.food, 'bois', this.householdSize(a) * K.firewoodPerPerson * 5, GOOD_DEFS.bois.shelf);
+      invAdd(a.food, 'bois', this.householdSize(a) * K.firewoodPerPerson * 15, GOOD_DEFS.bois.shelf);
     }
     // métiers
     const working = rng.shuffle(this.agents.filter((a) => this.ageY(a) >= K.adultAge && this.ageY(a) < this.policy.retirementAge));
@@ -547,12 +632,14 @@ export class Simulation {
     // métiers qualifiés d'abord (les plus éduqués) : médecins libéraux, enseignants, assureurs
     const byEdu = [...working].sort((x, y) => y.edu - x.edu);
     const mShare = MARKET_JOBS.reduce((s, j) => s + JOB_DEFS[j].share, 0);
-    const nTeach = Math.round((this.policy.teachersPer1000 * population) / 1000);
+    // fonctionnaires de départ (hors travaux publics, embauchés à la fin du premier mois)
+    const nPublic = PUBLIC_JOBS.filter((j) => j !== 'cantonnier').map((j) => [j, Math.round(((this.policy[STAFF_POLICY[j]] as number) * population) / 1000)] as [Job, number]);
+    const nTeach = nPublic.reduce((s, x) => s + x[1], 0);
     const nDoc = Math.round((JOB_DEFS.medecin.share / mShare) * (working.length - nTeach));
     const nIns = Math.max(1, Math.round((JOB_DEFS.assureur.share / mShare) * (working.length - nTeach)));
     let k = 0;
     for (let i = 0; i < nDoc && k < byEdu.length; i++, k++) this.startIndependent(byEdu[k], 'medecin', true);
-    for (let i = 0; i < nTeach && k < byEdu.length; i++, k++) this.makePublic(byEdu[k], 'enseignant');
+    for (const [j, n] of nPublic) for (let i = 0; i < n && k < byEdu.length; i++, k++) this.makePublic(byEdu[k], j);
     for (let i = 0; i < nIns && k < byEdu.length; i++, k++) this.startIndependent(byEdu[k], 'assureur', true);
     const rest = working.filter((a) => !a.publicJob && a.biz < 0);
     const jobs = MARKET_JOBS.filter((j) => j !== 'medecin' && j !== 'assureur');
@@ -565,6 +652,12 @@ export class Simulation {
     }
     while (idx < rest.length) this.startIndependent(rest[idx++], 'cerealier', true);
     for (const j of JOBS) this.sectorIncome[j] = 400;
+    // équipements publics de départ : infrastructures aux deux tiers de la référence (effet neutre),
+    // logements sociaux déjà construits
+    this.infra = K.infraPerCapita * 100 * population * (2 / 3);
+    this.housing = this.policy.socialHousing * this.agents.filter((a) => this.isHead(a)).length;
+    this.census();
+    this.assignHousing();
     this.computeCapacities();
     this.chooseInsurance();
   }
@@ -710,6 +803,8 @@ export class Simulation {
     this.d = this.freshDaily();
     for (const b of this.businesses) if (b.alive) { b.revDay = 0; b.costDay = 0; b.inputDay = 0; }
     this.tickEvents();
+    this.census();
+    this.publicCapital();
     this.regrow();
     this.expire();
     this.computeCapacities();
@@ -717,6 +812,7 @@ export class Simulation {
     this.wholesaleMarket();
     this.retailMarket();
     this.consume();
+    this.crime();
     this.healthcare();
     this.businessFinance();
     this.statePayments();
@@ -727,6 +823,78 @@ export class Simulation {
     this.monthGdp += this.d.gdp;
     if (this.day % K.daysPerMonth === 0) this.monthly();
     this.recordStats();
+  }
+
+  /**
+   * Recensement du jour : population et effectifs publics (servent aux effets des services publics),
+   * facteur de maladie (prévention par les infirmiers ±15 % autour de la référence, pollution jusqu'à +50 %).
+   */
+  private census(): void {
+    let pop = 0;
+    let kids = 0;
+    for (const j of PUBLIC_JOBS) this.staffN[j] = 0;
+    for (const a of this.agents) {
+      if (!a.alive) continue;
+      pop++;
+      if (this.ageY(a) < K.adultAge) kids++;
+      if (a.publicJob && a.job && !a.sick) this.staffN[a.job] = (this.staffN[a.job] ?? 0) + 1;
+    }
+    this.popN = pop;
+    this.kidsN = kids;
+    this.envSick = (1.15 - 0.15 * this.staffCov('infirmier', K.nurseRef)) * (1 + 0.5 * Math.min(2, this.pollution / K.pollutionRef));
+  }
+
+  /** Effectif d'une fonction publique rapporté à sa référence pour 1000 habitants (0 à 2). */
+  staffCov(job: Job, refPer1000: number): number {
+    return Math.min(2, (this.staffN[job] ?? 0) / Math.max(0.5, (refPer1000 * this.popN) / 1000));
+  }
+
+  /** Usure des équipements publics : infrastructures, logements sociaux, irrigation ; attribution des logements. */
+  private publicCapital(): void {
+    this.infra *= 1 - 1 / K.infraLife;
+    // travaux publics : le travail des cantonniers s'ajoute aux infrastructures (au salaire de départ)
+    this.infra += (this.staffN.cantonnier ?? 0) * this.policy.publicSalary * 100;
+    this.housing *= 1 - 1 / K.housingLife;
+    this.landBonus *= 1 - 1 / K.landLife;
+    if (this.day % K.daysPerMonth === 1) this.assignHousing();
+  }
+
+  /** Logements sociaux : aux foyers les plus modestes (épargne par membre), révisé chaque mois. */
+  private assignHousing(): void {
+    const n = Math.floor(this.housing);
+    const heads = this.agents.filter((a) => this.isHead(a));
+    heads.sort((x, y) => x.money / this.householdSize(x) - y.money / this.householdSize(y));
+    this.housed = new Set(heads.slice(0, n).map((a) => a.id));
+  }
+
+  /**
+   * Vols : un foyer affamé et sans argent peut voler de la nourriture dans un commerce. La police
+   * (effectif rapporté à la référence) en dissuade la plupart ; un tiers du butin est gâché.
+   */
+  private crime(): void {
+    const police = this.staffCov('policier', K.policeRef);
+    const p = 0.08 * Math.max(0.1, 1.3 - 0.5 * police) * Math.max(0, 1 - this.policy.socialAidAmount / 6);
+    const shops = this.businesses.filter((b) => b.alive && b.job === 'commercant' && b.workers.length);
+    if (!shops.length) return;
+    const cpn = this.costPerNutrition();
+    for (const a of this.agents) {
+      if (!this.isHead(a) || a.hunger < 0.25) continue;
+      const need = this.householdNeed(a);
+      if (a.money > need * cpn) continue;
+      if (this.rng.next() >= p) continue;
+      const shop = this.rng.pick(shops);
+      let want = need * 2;
+      for (const g of FOOD_GOODS) {
+        if (want <= 0) break;
+        const q = Math.min(invQty(shop.inv, g), want / GOOD_DEFS[g].nutrition);
+        if (q <= 1e-6) continue;
+        const got = invTake(shop.inv, g, q);
+        for (const b of got) invAdd(a.food, g, b.q * 0.67, b.exp);
+        this.d.waste[g] = (this.d.waste[g] ?? 0) + q * 0.33;
+        want -= q * GOOD_DEFS[g].nutrition;
+      }
+      if (want < need * 2) this.d.thefts++;
+    }
   }
 
   triggerEvent(kind: EventKind): void {
@@ -745,8 +913,12 @@ export class Simulation {
   }
 
   private regrow(): void {
-    this.fishStock += K.fishR * this.fishStock * (1 - this.fishStock / K.fishK);
-    this.forestStock += K.forestR * this.forestStock * (1 - this.forestStock / K.forestK);
+    // gardes nature : ±15 % de repousse autour de l'effectif de référence ; la pollution freine la pêche
+    const env = 0.85 + 0.15 * this.staffCov('garde', K.rangerRef);
+    const pol = 1 - 0.3 * Math.min(1, this.pollution / K.pollutionRef);
+    this.fishStock += K.fishR * env * pol * this.fishStock * (1 - this.fishStock / K.fishK);
+    this.forestStock += K.forestR * env * this.forestStock * (1 - this.forestStock / K.forestK);
+    this.pollution *= 1 - K.pollutionDecay;
     this.fishStock = Math.max(10, this.fishStock);
     this.forestStock = Math.max(10, this.forestStock);
   }
@@ -766,6 +938,13 @@ export class Simulation {
     }
     let fishDemand = 0;
     let woodDemand = 0;
+    let oilDemand = 0;
+    let gasDemand = 0;
+    const oilB: Business[] = [];
+    const gasB: Business[] = [];
+    const pop = this.agents.reduce((s, a) => s + (a.alive ? 1 : 0), 0);
+    // infrastructures (routes, port, réseaux) : ±10 % de productivité autour du niveau de référence
+    const infraF = 0.9 + 0.15 * Math.min(1.3, this.infra / Math.max(1, K.infraPerCapita * 100 * pop));
     for (const b of this.businesses) {
       if (!b.alive) continue;
       const def = JOB_DEFS[b.job];
@@ -775,8 +954,9 @@ export class Simulation {
         continue;
       }
       let L = 0;
-      for (const id of b.workers) L += this.productivity(this.agents[id]);
-      const toolF = 1 + K.toolBonus * Math.min(1, b.tools / nw);
+      for (const id of b.workers) L += this.productivity(this.agents[id]) * infraF;
+      // énergie verte : sans installations (outils), presque rien ; le pétrole et le gaz, eux, coulent
+      const toolF = b.job === 'energieVerte' ? 0.3 + 0.9 * Math.min(1, b.tools / nw) : 1 + K.toolBonus * Math.min(1, b.tools / nw);
       const scaleF = 1 + Math.min(K.scaleBonusMax, K.scaleBonusPerWorker * (nw - 1));
       if (def.cat === 'commerce') {
         b.potential = K.shopCapacity * L * (0.6 + 0.4 * Math.min(1, b.tools / nw)) * scaleF;
@@ -793,8 +973,16 @@ export class Simulation {
         continue;
       }
       let nat = this.eventFactor(b.job);
-      if (def.natural?.kind === 'land') nat *= n[b.job] <= def.natural.cap ? 1 : Math.sqrt(def.natural.cap / n[b.job]);
-      b.potential = L * toolF * scaleF * nat * def.batches;
+      if (def.natural?.kind === 'land') {
+        // irrigation et défrichement : les terres accueillent plus de travailleurs avant les rendements décroissants
+        const cap = def.natural.cap * (1 + this.landBonus);
+        nat *= n[b.job] <= cap ? 1 : Math.sqrt(cap / n[b.job]);
+      }
+      // machines : un producteur qui dispose d'énergie produit plus (tracteurs, bateaux à moteur, scies)
+      const mechF = MECHANIZED.includes(b.job) ? 1 + K.energyBonus * Math.min(1, invQty(b.inv, 'energie') / (nw * K.energyPerWorker)) : 1;
+      b.potential = L * toolF * scaleF * nat * mechF * def.batches;
+      if (def.natural?.kind === 'oil') { b.potential *= Math.max(0.05, Math.sqrt(this.oilReserve / K.oilReserve)); oilDemand += b.potential; oilB.push(b); }
+      if (def.natural?.kind === 'gas') { b.potential *= Math.max(0.05, Math.sqrt(this.gasReserve / K.gasReserve)); gasDemand += b.potential; gasB.push(b); }
       if (def.natural?.kind === 'fish') { b.potential *= Math.pow(Math.min(1, this.fishStock / (0.5 * K.fishK)), 0.7); fishDemand += b.potential; raw.push(b); }
       if (def.natural?.kind === 'forest') { b.potential *= Math.pow(Math.min(1, this.forestStock / (0.5 * K.forestK)), 0.7); woodDemand += b.potential; raw.push(b); }
     }
@@ -804,6 +992,9 @@ export class Simulation {
     const fishF = fishDemand > fishMax ? fishMax / fishDemand : 1;
     const woodF = woodDemand > woodMax ? woodMax / woodDemand : 1;
     for (const b of raw) b.potential *= b.job === 'pecheur' ? fishF : woodF;
+    // gisements : on ne peut pas extraire plus que ce qui reste
+    if (oilDemand > this.oilReserve) for (const b of oilB) b.potential *= this.oilReserve / oilDemand;
+    if (gasDemand > this.gasReserve) for (const b of gasB) b.potential *= this.gasReserve / gasDemand;
     for (const g of GOODS) this.capByGood[g] = 0;
     this.shopCapTotal = 0;
     for (const b of this.businesses) {
@@ -826,16 +1017,60 @@ export class Simulation {
       for (const [g, q] of Object.entries(def.outputs) as [Good, number][]) b.prodEma[g] = (b.prodEma[g] ?? batches * q) * 0.85 + Math.max(0, batches) * q * 0.15;
       if (batches <= 1e-6) continue;
       for (const [g, q] of Object.entries(def.inputs) as [Good, number][]) invTake(b.inv, g, batches * q);
+      // les machines consomment leur énergie au prorata de l'activité
+      if (MECHANIZED.includes(b.job)) {
+        const e = Math.min(invQty(b.inv, 'energie'), b.workers.length * K.energyPerWorker * Math.min(1, batches / Math.max(1e-6, b.potential)));
+        if (e > 0) {
+          invTake(b.inv, 'energie', e);
+          this.d.energyUse.machines += e;
+        }
+      }
       for (const [g, q] of Object.entries(def.outputs) as [Good, number][]) {
         const out = batches * q;
         invAdd(b.inv, g, out, this.day + GOOD_DEFS[g].shelf);
         this.d.production[g] = (this.d.production[g] ?? 0) + out;
         if (g === 'poisson') this.fishStock = Math.max(10, this.fishStock - out);
         if (g === 'bois') this.forestStock = Math.max(10, this.forestStock - out);
+        if (g === 'energie') this.energyProduced(b, out);
       }
       for (const id of b.workers) {
         const a = this.agents[id];
         if (!a.sick) a.xp = Math.min(1, a.xp + 1 / 180);
+      }
+    }
+  }
+
+  /**
+   * Énergie produite : épuisement des gisements, émissions, taxe carbone (payée par le producteur,
+   * dans la limite de sa trésorerie) et subvention à l'énergie verte (payée par l'État).
+   */
+  private energyProduced(b: Business, out: number): void {
+    const src = b.job === 'petrolier' ? 'petrole' : b.job === 'gazier' ? 'gaz' : 'vert';
+    this.d.energyBySource[src] += out;
+    if (b.job === 'petrolier') this.oilReserve = Math.max(0, this.oilReserve - out);
+    if (b.job === 'gazier') this.gasReserve = Math.max(0, this.gasReserve - out);
+    const em = out * (EMISSIONS[b.job] ?? 0);
+    this.pollution += em;
+    this.d.emissions += em;
+    const p = this.policy;
+    if (em > 0 && p.carbonTax > 0) {
+      const t = Math.min(b.cash, Math.round(em * p.carbonTax * 100 * this.indexFactor()));
+      if (t > 0) {
+        b.cash -= t;
+        b.otherMonth += t;
+        this.collect('taxeCarbone', t);
+        this.flow('production', 'etat', t);
+      }
+    }
+    if (b.job === 'energieVerte' && p.greenSubsidy > 0) {
+      const need = Math.round(out * p.greenSubsidy * 100 * this.indexFactor());
+      this.needMonth.environnement += need;
+      const x = Math.min(Math.round(need * this.budgetCut), Math.max(0, this.treasury));
+      if (x > 0) {
+        this.stateOut('environnement', x);
+        b.cash += x;
+        b.revMonth += x;
+        this.flow('etat', 'production', x);
       }
     }
   }
@@ -883,6 +1118,7 @@ export class Simulation {
       for (const [g] of b.inv) {
         if (def.inputs[g] !== undefined) continue;
         if (def.cat === 'commerce' && GOOD_DEFS[g].retail) continue;
+        if (g === 'energie' && MECHANIZED.includes(b.job)) continue; // carburant des machines, pas à vendre
         const qty = invQty(b.inv, g);
         if (qty <= 1e-6) continue;
         const exp = invExpiringBy(b.inv, g, this.day + 1);
@@ -941,6 +1177,12 @@ export class Simulation {
           want.push({ g, q: need, p: Math.min(this.bidOf(b, g), maxP) * rng.range(0.98, 1.02) });
         }
       }
+      // énergie des machines : 5 jours d'avance, payée au plus 80 % de ce qu'elle rapporte
+      if (MECHANIZED.includes(b.job)) {
+        const need = nw * K.energyPerWorker * 5 - invQty(b.inv, 'energie');
+        const maxP = (K.energyBonus * Math.max(50, b.vaPerWorker) * 0.8) / K.energyPerWorker;
+        if (need > 0.05) want.push({ g: 'energie', q: need, p: Math.min(this.bidOf(b, 'energie'), maxP) * rng.range(0.98, 1.02) });
+      }
       if (b.tools < nw * 0.95 && b.job !== 'charpentier' && def.cat !== 'assurance') {
         const gainPerDay = K.toolBonus * Math.max(50, b.vaPerWorker);
         const maxP = gainPerDay * 50;
@@ -964,6 +1206,12 @@ export class Simulation {
     const stateWant = this.publicPurchaseOrders();
     for (const x of stateWant) bids.get(x.g)!.push({ owner: STATE_ID, qty: x.q, price: x.p, filled: 0 });
     const stateGot = new Map<Good, Batch[]>();
+    const stateCost = new Map<Good, number>();
+    // silo public de blé : achète au prix plancher, revend au prix plafond (ordres distincts, tag 7)
+    const silo = this.siloOrders();
+    if (silo.buy) bids.get('ble')!.push({ owner: STATE_ID, qty: silo.buy.q, price: silo.buy.p, filled: 0, tag: 7 });
+    if (silo.sell) asks.get('ble')!.push({ owner: STATE_ID, qty: silo.sell.q, price: silo.sell.p, filled: 0, tag: 7 });
+    let siloBought = 0;
 
     const sold = new Map<number, Partial<Record<Good, number>>>();
     const bought = new Map<number, Partial<Record<Good, number>>>();
@@ -975,6 +1223,30 @@ export class Simulation {
       const p = res.price;
       let vol = 0;
       for (const m of res.matches) {
+        if (m.ask.owner === STATE_ID) {
+          // vente du silo à une entreprise
+          const buyer = this.businesses[m.bid.owner];
+          let q = Math.min(m.qty, invQty(this.silo, g));
+          let cost = Math.round(p * q);
+          if (cost > buyer.cash) {
+            q = buyer.cash / p;
+            cost = Math.min(buyer.cash, Math.round(p * q));
+          }
+          if (q <= 1e-6 || cost <= 0) continue;
+          invAddBatches(buyer.inv, g, invTake(this.silo, g, q));
+          buyer.cash -= cost;
+          buyer.costDay += cost;
+          buyer.inputMonth += cost;
+          buyer.inputDay += cost;
+          this.collect('ventesPubliques', cost);
+          this.flow(this.catOf(buyer), 'etat', cost);
+          const bb = bought.get(buyer.id) ?? {};
+          bb[g] = (bb[g] ?? 0) + q;
+          bought.set(buyer.id, bb);
+          vol += q;
+          this.d.wholesaleValue += cost;
+          continue;
+        }
         if (m.bid.owner === STATE_ID) {
           const seller = this.businesses[m.ask.owner];
           let q = m.qty;
@@ -986,10 +1258,18 @@ export class Simulation {
           }
           if (q <= 1e-6 || cost <= 0) continue;
           const got = invTake(seller.inv, g, q);
-          const arr = stateGot.get(g) ?? [];
-          arr.push(...got);
-          stateGot.set(g, arr);
-          this.stateOut('achats', cost);
+          if (m.bid.tag === 7) {
+            // blé mis en silo : séché et stocké, il se conserve un an
+            for (const x of got) invAdd(this.silo, g, x.q, this.day + K.siloShelf);
+            this.stateOut('agriculture', cost);
+            siloBought += q;
+          } else {
+            const arr = stateGot.get(g) ?? [];
+            arr.push(...got);
+            stateGot.set(g, arr);
+            this.treasury -= cost;
+            stateCost.set(g, (stateCost.get(g) ?? 0) + cost);
+          }
           seller.cash += cost;
           seller.revDay += cost;
           seller.revMonth += cost;
@@ -1067,76 +1347,142 @@ export class Simulation {
         b.bid[g] = this.adaptBid(this.bidOf(b, g), got / q, this.lastW[g]);
       }
     }
-    this.deliverPublicPurchases(stateWant, stateGot);
+    this.deliverPublicPurchases(stateWant, stateGot, stateCost);
+    this.d.siloTrade = siloBought;
   }
 
   /**
-   * Besoins d'achats publics du jour : pain et fruits pour les cantines (`schoolMeals` unités de
-   * nutrition par enfant), bois pour chauffer l'école, outils pour l'entretien. Le budget voté n'en
-   * finance qu'une part ; les quantités sont réduites d'autant.
+   * Silo public : prix de référence du blé = valeur du travail d'un céréalier par unité. L'État
+   * achète sous `grainFloor` × référence (jusqu'à `siloDays` jours de consommation), revend au-dessus
+   * de 1,5 × référence. Il amortit le cycle du blé : les céréaliers ne sont plus ruinés par un prix
+   * effondré, la pénurie qui suit est en partie couverte par le stock.
    */
-  private publicPurchaseOrders(): { g: Good; q: number; p: number }[] {
+  private siloOrders(): { buy?: { q: number; p: number }; sell?: { q: number; p: number } } {
+    const p = this.policy;
+    const stock = invQty(this.silo, 'ble');
+    const out: { buy?: { q: number; p: number }; sell?: { q: number; p: number } } = {};
+    if (stock > 1) out.sell = { q: Math.min(stock, 0.3 * this.capByGood.ble + 1), p: Math.max(2, 1.5 * this.laborPerBatch('cerealier')) };
+    if (!p.grainReserve) return out;
+    const room = K.siloDays * this.capByGood.ble * 0.5 - stock;
+    if (room > 1 && this.treasury > 0) out.buy = { q: Math.min(room, 0.3 * this.capByGood.ble), p: Math.max(1, p.grainFloor * this.laborPerBatch('cerealier')) };
+    return out;
+  }
+
+  /**
+   * Achats publics du jour, par poste : pain et fruits des cantines (`schoolMeals` par enfant), bois
+   * de chauffage et matériel (artisanat) des écoles, bois et outils des infrastructures (la moitié de
+   * `publicInvestment`, l'autre moitié paie les travaux publics), construction et entretien des
+   * logements sociaux, culture et sport (artisanat), irrigation et défrichement (outils). Le budget
+   * voté n'en finance qu'une part ; l'État suit le marché (au plus 10 % au-dessus du dernier prix) et
+   * ne prend pas plus de 15 % de la capacité de production d'un bien (25 % pour bois et outils).
+   */
+  private publicPurchaseOrders(): { g: Good; q: number; p: number; parts: PublicOrder[] }[] {
     const p = this.policy;
     let kids = 0;
     let pop = 0;
+    let homes = 0;
     for (const a of this.agents) {
       if (!a.alive) continue;
       pop++;
       if (this.ageY(a) < K.adultAge) kids++;
+      if (this.isHead(a)) homes++;
     }
-    const pupils = Math.min(kids, this.agents.reduce((s, a) => s + (a.alive && a.publicJob ? 1 : 0), 0) * K.pupilsPerTeacher);
+    const pupils = Math.min(kids, this.staffN.enseignant * K.pupilsPerTeacher);
     const meals = kids * p.schoolMeals;
-    const want: { g: Good; q: number }[] = [
-      { g: 'pain', q: (meals * 0.6) / GOOD_DEFS.pain.nutrition },
-      { g: 'fruits', q: (meals * 0.4) / GOOD_DEFS.fruits.nutrition },
-      { g: 'bois', q: pupils * 0.04 },
-      { g: 'outils', q: pop * 0.0005 },
+    const ix = this.indexFactor();
+    const W = (g: Good) => GOOD_DEFS[g].wholesale0 * ix; // prix de référence pour chiffrer les quantités
+    const gdpDay = this.gdpYear() / D;
+    const housingGap = Math.max(0, p.socialHousing * homes - this.housing);
+    const want: PublicOrder[] = [
+      { k: 'cantines', g: 'pain', q: (meals * 0.6) / GOOD_DEFS.pain.nutrition },
+      { k: 'cantines', g: 'fruits', q: (meals * 0.4) / GOOD_DEFS.fruits.nutrition },
+      { k: 'education', g: 'bois', q: pupils * 0.04 },
+      { k: 'education', g: 'artisanat', q: (pupils * p.schoolSupplies * 100 * ix) / D / W('artisanat') },
+      { k: 'investissement', g: 'bois', q: (p.publicInvestment * gdpDay * 0.25) / W('bois') },
+      { k: 'investissement', g: 'outils', q: (p.publicInvestment * gdpDay * 0.25) / W('outils') },
+      // logements : entretien (1/40 par an) et construction (un dixième de l'écart par mois)
+      { k: 'logement', g: 'bois', q: ((this.housing / K.housingLife) + housingGap / 300) * K.housingWood },
+      { k: 'logement', g: 'outils', q: ((this.housing / K.housingLife) + housingGap / 300) * K.housingTools },
+      { k: 'culture', g: 'artisanat', q: (pop * p.culture * 100 * ix) / D / W('artisanat') },
+      { k: 'agriculture', g: 'outils', q: (p.landImprovement * gdpDay) / W('outils') },
     ];
-    const out: { g: Good; q: number; p: number }[] = [];
+    const byGood = new Map<Good, PublicOrder[]>();
     let need = 0;
     for (const x of want) {
-      if (x.q <= 0.01) continue;
-      // l'État suit le marché (au plus 10 % au-dessus du dernier prix) et ne prend pas plus de 15 %
-      // de la capacité de production du bien : il ne doit pas affamer les commerces
-      const price = Math.min((this.stateBid[x.g] ??= this.lastW[x.g]), this.lastW[x.g] * 1.1);
-      this.stateBid[x.g] = price;
-      const q = Math.min(x.q, 0.15 * this.capByGood[x.g]);
-      need += x.q * price;
-      if (q > 0.01) out.push({ g: x.g, q, p: price });
+      if (x.q <= 1e-3) continue;
+      const arr = byGood.get(x.g) ?? [];
+      arr.push(x);
+      byGood.set(x.g, arr);
     }
-    this.needMonth.achats += need;
+    const out: { g: Good; q: number; p: number; parts: PublicOrder[] }[] = [];
+    for (const [g, parts] of byGood) {
+      const price = Math.min((this.stateBid[g] ??= this.lastW[g]), this.lastW[g] * 1.1);
+      this.stateBid[g] = price;
+      const tot = parts.reduce((s, x) => s + x.q, 0);
+      for (const x of parts) {
+        this.needMonth[x.k] += x.q * price;
+        need += x.q * price;
+      }
+      const q = Math.min(tot, (g === 'bois' || g === 'outils' ? 0.25 : 0.15) * this.capByGood[g]);
+      if (q > 0.01) out.push({ g, q, p: price, parts });
+    }
     // part financée, et jamais plus que la moitié de la caisse du jour
-    const sc = Math.min(this.budgetCut, need > 0 ? Math.max(0, this.treasury) * 0.5 / need : 0);
+    const sc = Math.min(this.budgetCut, need > 0 ? (Math.max(0, this.treasury) * 0.5) / need : 0);
     for (const x of out) x.q *= sc;
     return out.filter((x) => x.q > 1e-3);
   }
 
-  /** Livraison : repas des cantines dans le garde-manger des foyers avec enfants ; bois et outils consommés. */
-  private deliverPublicPurchases(want: { g: Good; q: number; p: number }[], got: Map<Good, Batch[]>): void {
+  /** Livraison et comptabilité des achats publics, répartis entre les postes au prorata des commandes. */
+  private deliverPublicPurchases(want: { g: Good; q: number; p: number; parts: PublicOrder[] }[], got: Map<Good, Batch[]>, cost: Map<Good, number>): void {
+    const homes: { h: Agent; kids: number }[] = [];
+    let kids = 0;
+    let school = 0;
+    let culture = 0;
     for (const x of want) {
       let q = 0;
       for (const b of got.get(x.g) ?? []) q += b.q;
       // prix appris : servi → on baisse doucement, pas servi → on monte vers le marché
       this.stateBid[x.g] = this.adaptBid(x.p, q / x.q, this.lastW[x.g]);
+      if (q <= 1e-9) continue;
+      const tot = x.parts.reduce((s, o) => s + o.q, 0);
+      const c = cost.get(x.g) ?? 0;
+      let booked = 0;
+      x.parts.forEach((o, i) => {
+        const share = o.q / tot;
+        const qq = q * share;
+        const cc = i === x.parts.length - 1 ? c - booked : Math.round(c * share);
+        booked += cc;
+        this.book(o.k, cc);
+        this.boughtMonth[o.k] += cc;
+        const v = qq * GOOD_DEFS[x.g].wholesale0; // valeur aux prix de départ (centimes)
+        if (o.k === 'investissement') this.infra += v;
+        else if (o.k === 'logement') this.housing += x.g === 'bois' ? qq / K.housingWood / 2 : qq / K.housingTools / 2;
+        else if (o.k === 'agriculture') this.landBonus += qq * K.landPerTool;
+        else if (o.k === 'education' && x.g === 'artisanat') school += v;
+        else if (o.k === 'culture') culture += v;
+        else if (o.k === 'cantines') {
+          // repas des cantines dans le garde-manger des foyers avec enfants
+          if (!homes.length) {
+            for (const a of this.agents) {
+              if (!this.isHead(a)) continue;
+              const n = a.status === 'enfant' ? 1 + this.dependents(a).length : this.dependents(a).length;
+              if (n > 0) {
+                homes.push({ h: a, kids: n });
+                kids += n;
+              }
+            }
+          }
+          if (kids) for (const b of got.get(x.g)!) for (const { h, kids: n } of homes) invAdd(h.food, x.g, (b.q * share * n) / kids, b.exp);
+        }
+      });
     }
-    const food = FOOD_GOODS.filter((g) => got.has(g));
-    if (!food.length) return;
-    const homes: { h: Agent; kids: number }[] = [];
-    let kids = 0;
-    for (const a of this.agents) {
-      if (!this.isHead(a)) continue;
-      const n = a.status === 'enfant' ? 1 + this.dependents(a).length : this.dependents(a).length;
-      if (n > 0) {
-        homes.push({ h: a, kids: n });
-        kids += n;
-      }
-    }
-    if (!kids) return;
-    for (const g of food) {
-      for (const batch of got.get(g)!) {
-        for (const { h, kids: n } of homes) invAdd(h.food, g, (batch.q * n) / kids, batch.exp);
-      }
-    }
+    // couverture du matériel scolaire et de la culture (1 = niveau par défaut), moyenne sur ~2 mois
+    const p = this.policy;
+    const ref = (perYear: number, n: number) => Math.max(1, (perYear * 100 * n) / D);
+    const pupils = Math.min(this.agents.reduce((s, a) => s + (a.alive && this.ageY(a) < K.adultAge ? 1 : 0), 0), this.staffN.enseignant * K.pupilsPerTeacher);
+    this.schoolCov = this.schoolCov * 0.98 + 0.02 * Math.min(1.5, school / ref(DEFAULT_POLICY.schoolSupplies, pupils));
+    this.cultureCov = this.cultureCov * 0.98 + 0.02 * Math.min(1.5, culture / ref(DEFAULT_POLICY.culture, this.popN));
+    void p;
   }
 
   /**
@@ -1184,6 +1530,7 @@ export class Simulation {
 
   private retailMarket(): void {
     const rng = this.rng;
+    const prevPrices = { ...this.lastR };
     const vat = this.policy.vat;
     const bids = new Map<Good, Order[]>();
     const asks = new Map<Good, Order[]>();
@@ -1270,14 +1617,18 @@ export class Simulation {
           spent += q * p;
         }
       }
-      // bois de chauffage, après la nourriture
-      const wood = this.householdSize(a) * K.firewoodPerPerson * 4 - invQty(a.food, 'bois');
-      if (wood > 0.05) {
-        const p = this.lastR.bois * (a.cold ? 1.04 : 1.01) * rng.range(0.97, 1.03);
+      // chauffage, après la nourriture : bois et énergie, surtout le moins cher (part ∝ prix^-3)
+      const heat = this.heatNeed(a, this.householdSize(a)) * 4 - invQty(a.food, 'bois') - invQty(a.food, 'energie');
+      if (heat > 0.05) {
         // le chauffage ne prend pas plus de 10 % du budget : trop cher, on accepte d'avoir froid
-        const woodBudget = Math.min(Math.max(0, a.money * 0.95 - spent), 0.1 * (dailyIncome + a.money / 30) * 4);
-        const q = Math.min(wood, woodBudget / p);
-        if (q > 0.01) bids.get('bois')!.push({ owner: a.id, qty: q, price: p, filled: 0 });
+        const heatBudget = Math.min(Math.max(0, a.money * 0.95 - spent), 0.1 * (dailyIncome + a.money / 30) * 4);
+        const sE = Math.pow(this.lastR.energie, -3);
+        const sB = Math.pow(this.lastR.bois, -3);
+        for (const [fuel, w] of [['energie', sE / (sE + sB)], ['bois', sB / (sE + sB)]] as [Good, number][]) {
+          const p = this.lastR[fuel] * (a.cold ? 1.04 : 1.01) * rng.range(0.97, 1.03);
+          const q = Math.min(heat * w, (heatBudget * w) / p);
+          if (q > 0.01) bids.get(fuel)!.push({ owner: a.id, qty: q, price: p, filled: 0 });
+        }
       }
     }
 
@@ -1327,6 +1678,13 @@ export class Simulation {
       // la filière ne peut plus suivre ses coûts et s'éteint alors que les ménages ont de quoi payer
       const short = res.demand > 0 ? this.d.unmet[g]! / res.demand : 0;
       if (short > 0.5) this.lastR[g] = Math.max(this.lastR[g], prevR);
+      // aucune vente alors que des commerces proposent : le prix de référence (sur lequel les ménages
+      // calent leurs offres) se rapproche de l'offre la moins chère (tâtonnement)
+      const al = asks.get(g)!;
+      if (res.price === null && al.length && res.demand > 0) {
+        const minAsk = Math.min(...al.map((o) => o.price));
+        if (minAsk > this.lastR[g]) this.lastR[g] += 0.1 * (minAsk - this.lastR[g]);
+      }
       this.retailDemand[g] = res.demand;
       this.retailUnmet[g] = this.d.unmet[g]!;
     }
@@ -1350,6 +1708,7 @@ export class Simulation {
         b.retail[g] = clamp(m, 1.0, 1.6);
       }
     }
+    this.updateCpi(prevPrices);
   }
 
   /**
@@ -1411,16 +1770,26 @@ export class Simulation {
       const r = need > 0 ? Math.min(1, got / need) : 1;
       const art = invQty(a.food, 'artisanat');
       if (art > 0) invTake(a.food, 'artisanat', art * K.comfortWear);
-      const woodNeed = members.length * K.firewoodPerPerson;
-      const wood = Math.min(woodNeed, invQty(a.food, 'bois'));
+      // chauffage : bois ou énergie (une unité = une unité de bois) ; un logement social isolé en demande moitié moins
+      const heatNeed = this.heatNeed(a, members.length);
+      const en = Math.min(heatNeed, invQty(a.food, 'energie'));
+      invTake(a.food, 'energie', en);
+      this.d.energyUse.menages += en;
+      const wood = Math.min(heatNeed - en, invQty(a.food, 'bois'));
       invTake(a.food, 'bois', wood);
-      const cold = wood < woodNeed * 0.8;
+      const cold = en + wood < heatNeed * 0.8;
+      if (cold) this.d.cold += members.length;
       for (const m of members) {
         m.fed = r;
         m.hunger = m.hunger * 0.75 + (1 - r) * 0.25;
         m.cold = cold;
       }
     }
+  }
+
+  /** Besoin de chauffage d'un foyer (unités de bois ou d'énergie par jour). */
+  private heatNeed(head: Agent, members: number): number {
+    return members * K.firewoodPerPerson * (this.housed.has(head.id) ? 0.5 : 1);
   }
 
   // ------------------------------------------------------------------ finances des entreprises
@@ -1525,16 +1894,29 @@ export class Simulation {
     const p = this.policy;
     const ix = this.indexFactor();
     const cut = this.budgetCut;
-    const civil: Agent[] = [];
+    const staff = new Map<SpendKey, Agent[]>();
     const retirees: Agent[] = [];
     const adults: Agent[] = [];
     const poor: Agent[] = [];
+    const parents: Agent[] = [];
+    const sickW: Agent[] = [];
+    const unemployed: Agent[] = [];
     for (const a of this.agents) {
       if (!a.alive) continue;
-      if (a.publicJob) civil.push(a);
+      if (a.publicJob && a.job) {
+        const k = STAFF_KEY[a.job];
+        if (!staff.has(k)) staff.set(k, []);
+        staff.get(k)!.push(a);
+      }
       if (a.status === 'retraite') retirees.push(a);
       if (a.status !== 'enfant') adults.push(a);
-      if (this.isHead(a) && a.money < p.socialAidThreshold * 100 * this.householdSize(a) * ix) poor.push(a);
+      // indemnités : actifs malades (hors fonctionnaires, payés quand même) et invalides
+      if ((a.status === 'actif' && !a.publicJob && a.sick) || ((a.status === 'actif' || a.status === 'chomeur') && a.health < 35)) sickW.push(a);
+      if (a.status === 'chomeur') unemployed.push(a);
+      if (this.isHead(a)) {
+        if (a.money < p.socialAidThreshold * 100 * this.householdSize(a) * ix) poor.push(a);
+        if (this.dependents(a).length || a.status === 'enfant') parents.push(a);
+      }
     }
     // aide d'urgence promise après une catastrophe : dépense exceptionnelle, hors règle budgétaire
     if (this.pendingRelief.length) {
@@ -1550,16 +1932,21 @@ export class Simulation {
       }
       this.pendingRelief = this.pendingRelief.filter((r) => r.left > 0);
     }
-    // montants dus (besoins) ; le budget voté n'en finance qu'une part (`cut`), le salaire des
-    // enseignants n'est pas coupé (on en recrute moins)
+    // montants dus (besoins) ; le budget voté n'en finance qu'une part (`cut`). Les salaires publics
+    // ne sont pas coupés (on recrute moins) et ne comptent pas dans les besoins mensuels (chiffrés
+    // d'après les effectifs au vote du budget)
+    const salary = () => Math.round(p.publicSalary * 100 * ix);
     const plan: [SpendKey, Agent[], (a: Agent) => number, boolean, number][] = [
-      ['salaires', civil, () => Math.round(p.publicSalary * 100 * ix), true, 1],
+      ...[...staff].map(([k, list]) => [k, list, salary, true, 1] as [SpendKey, Agent[], (a: Agent) => number, boolean, number]),
       ['pensions', retirees, () => Math.round(p.pension * 100 * ix), true, cut],
       // aide sociale : par membre du foyer, pour remonter vers le seuil
       ['aideSociale', poor, (a) => {
         const n = this.householdSize(a);
         return Math.min(Math.round(p.socialAidAmount * 100 * ix * n), Math.round(p.socialAidThreshold * 100 * ix * n) - a.money);
       }, false, cut],
+      ['allocationsFamiliales', parents, (a) => Math.round(p.familyAllowance * 100 * ix * (this.dependents(a).length + (a.status === 'enfant' ? 1 : 0))), false, cut],
+      ['indemnitesMaladie', sickW, () => Math.round(p.sickPay * 100 * ix), true, cut],
+      ['chomage', unemployed, () => Math.round(p.unemploymentBenefit * 100 * ix), true, cut],
       ['revenuUniversel', adults, () => Math.round(p.ubi * 100 * ix), false, cut],
     ];
     const totals = plan.map(([, list, amount]) => list.reduce((s, a) => s + Math.max(0, amount(a)), 0));
@@ -1571,7 +1958,7 @@ export class Simulation {
     let worst = 1;
     for (const [i, [k, list, amount, taxable, share]] of plan.entries()) {
       let tot = totals[i];
-      this.needMonth[k] += tot;
+      if (share !== 1 || !staff.has(k)) this.needMonth[k] += tot;
       tot *= share;
       if (tot <= 0) continue;
       const ratio = this.treasury >= tot ? 1 : Math.max(0, this.treasury) / tot;
@@ -1585,6 +1972,12 @@ export class Simulation {
   private stateOut(k: SpendKey, cents: number): void {
     if (cents <= 0) return;
     this.treasury -= cents;
+    this.book(k, cents);
+  }
+
+  /** Inscrit une dépense déjà sortie de la caisse dans les comptes du jour et du mois. */
+  private book(k: SpendKey, cents: number): void {
+    if (cents <= 0) return;
     this.d.spending[k] += cents;
     this.stateMonth.spending[k] += cents;
   }
@@ -1593,7 +1986,7 @@ export class Simulation {
 
   /** Probabilité quotidienne de tomber malade (hors épidémie). */
   private sickProb(a: Agent): number {
-    return 0.0012 * (1 + this.ageY(a) / 40) * (1 + 2 * (1 - a.health / 100)) * (a.fed < 0.7 ? 2 : 1);
+    return 0.0012 * (1 + this.ageY(a) / 40) * (1 + 2 * (1 - a.health / 100)) * (a.fed < 0.7 ? 2 : 1) * this.envSick;
   }
 
   /** Part des maladies qui sont graves : croît avec l'âge. */
@@ -1782,7 +2175,7 @@ export class Simulation {
           a.severe = false;
         }
       }
-      if (a.fed >= 0.9) a.health += 0.4;
+      if (a.fed >= 0.9) a.health += 0.4 + 0.05 * (this.cultureCov - 1); // culture et sport
       else a.health -= 4 * Math.pow(1 - a.fed, 1.4);
       if (a.cold) a.health -= 0.15;
       a.health = Math.min(a.health, this.healthCeiling(a));
@@ -1994,7 +2387,9 @@ export class Simulation {
     const pr = kids.length ? Math.min(1, (teachers * K.pupilsPerTeacher) / kids.length) : 0;
     for (const k of kids) {
       if (k.sick) continue;
-      k.edu = Math.min(1, k.edu + (this.rng.next() < pr ? 1 / (10 * D) : 0.15 / (10 * D)));
+      // matériel scolaire : ±15 % de progrès autour du niveau par défaut
+      const f = 0.85 + 0.15 * this.schoolCov;
+      k.edu = Math.min(1, k.edu + (this.rng.next() < pr ? f / (10 * D) : 0.15 / (10 * D)));
     }
   }
 
@@ -2071,6 +2466,8 @@ export class Simulation {
     a.insurer = -1;
     this.d.deaths[cause]++;
     this.causesTotal[cause]++;
+    this.d.deathAges += this.ageY(a);
+    if (this.ageY(a) < 1) this.d.infantDeaths++;
     const heirs = a.children.map((c) => this.agents[c]).filter((c) => c.alive);
     const w = this.wealthOf(a);
     if (w > this.meanMoney * 8 && w > 100000) {
@@ -2313,13 +2710,16 @@ export class Simulation {
   private monthly(): void {
     const p = this.policy;
     const rng = this.rng;
-    // --- impôts
+    // --- impôts ; l'administration fiscale en perçoit tout à l'effectif de référence, sinon une part
+    // échappe au fisc (80 % perçus sans aucun agent)
+    const eff = 0.8 + 0.2 * Math.min(1, this.staffCov('administrateur', K.adminRef));
+    this.taxEff = eff;
     const values = new Map<number, number>();
     for (const b of this.businesses) if (b.alive) values.set(b.id, this.bizValue(b));
     for (const a of this.agents) {
       if (!a.alive) continue;
       const I = a.income / 100;
-      let tax = Math.round((p.incomeTaxLow * Math.min(I, p.incomeTaxThreshold) + p.incomeTaxHigh * Math.max(0, I - p.incomeTaxThreshold)) * 100);
+      let tax = Math.round((p.incomeTaxLow * Math.min(I, p.incomeTaxThreshold) + p.incomeTaxHigh * Math.max(0, I - p.incomeTaxThreshold)) * 100 * eff);
       tax = Math.min(tax, a.money);
       if (tax > 0) {
         a.money -= tax;
@@ -2327,7 +2727,7 @@ export class Simulation {
         this.flow('menages', 'etat', tax);
       }
       // cotisation à l'assurance maladie publique, proportionnelle aux revenus
-      const cot = Math.min(a.money, Math.round(a.income * p.secuContribution));
+      const cot = Math.min(a.money, Math.round(a.income * p.secuContribution * eff));
       if (cot > 0) {
         a.money -= cot;
         this.collect('cotisationsSante', cot);
@@ -2336,7 +2736,7 @@ export class Simulation {
       if (p.wealthTax > 0) {
         let w = a.money + a.bonds;
         for (const [bid, s] of a.shares) w += s * (values.get(bid) ?? 0);
-        const t = Math.min(a.money, Math.round(Math.max(0, w - p.wealthTaxThreshold * 100) * (p.wealthTax / 12)));
+        const t = Math.min(a.money, Math.round(Math.max(0, w - p.wealthTaxThreshold * 100) * (p.wealthTax / 12) * eff));
         if (t > 0) {
           a.money -= t;
           this.collect('impotFortune', t);
@@ -2349,7 +2749,7 @@ export class Simulation {
     for (const b of this.businesses) {
       if (!b.alive) continue;
       const profit = b.revMonth - b.inputMonth - b.wageMonth - b.otherMonth;
-      const t = Math.min(b.cash, Math.round(Math.max(0, profit) * p.corporateTax));
+      const t = Math.min(b.cash, Math.round(Math.max(0, profit) * p.corporateTax * eff));
       if (t > 0) {
         b.cash -= t;
         this.collect('impotSocietes', t);
@@ -2510,9 +2910,10 @@ export class Simulation {
     const spend = SPEND_KEYS.reduce((s, k) => s + this.stateMonth.spending[k], 0);
     this.needMonth.interets = this.stateMonth.spending.interets;
     this.needMonth.redistribution = this.stateMonth.spending.redistribution;
-    this.monthLog.push({ rev, spend: spend - this.stateMonth.spending.aideUrgence, gdp: this.monthGdp, ix: this.indexFactor(), cut: this.budgetCut, bought: this.stateMonth.spending.achats, needs: this.needMonth });
+    this.monthLog.push({ rev, spend: spend - this.stateMonth.spending.aideUrgence, gdp: this.monthGdp, ix: this.indexFactor(), cut: this.budgetCut, bought: this.boughtMonth, needs: this.needMonth });
     if (this.monthLog.length > 48) this.monthLog.shift();
     this.needMonth = zeroSpend();
+    this.boughtMonth = zeroSpend();
     this.monthGdp = 0;
   }
 
@@ -2540,16 +2941,21 @@ export class Simulation {
       if (a.status !== 'enfant') adults++;
     }
     const needs = zeroSpend();
-    needs.salaires = Math.round((p.teachersPer1000 * pop) / 1000) * p.publicSalary * 100 * ix * D;
-    needs.pensions = retirees * p.pension * 100 * ix * D;
-    needs.revenuUniversel = adults * p.ubi * 100 * ix * D;
-    for (const k of ['aideSociale', 'remboursementsSante', 'subsidesPrimes', 'achats'] as SpendKey[]) {
-      needs[k] = months.reduce((s, m) => s + m.needs[k], 0) * ann;
-    }
+    // transferts, soins, subventions, achats : besoins des 12 derniers mois
+    for (const k of SPEND_KEYS) if (!OFF_BUDGET.includes(k)) needs[k] = months.reduce((s, m) => s + m.needs[k], 0) * ann;
     // achats : seulement ce que le marché a pu fournir (ramené à un budget sans coupe). Les commandes
     // publiques sont plafonnées par la capacité des producteurs ; compter les commandes non servies
     // ferait réduire les autres enveloppes pour une dépense qui n'a pas lieu
-    needs.achats = Math.min(needs.achats, months.reduce((s, m) => s + m.bought / Math.max(0.3, m.cut), 0) * ann);
+    for (const k of ['cantines', 'education', 'investissement', 'logement', 'culture', 'agriculture'] as SpendKey[]) {
+      const bought = months.reduce((s, m) => s + m.bought[k] / Math.max(0.3, m.cut), 0) * ann;
+      const wished = months.reduce((s, m) => s + m.needs[k], 0) * ann;
+      // la subvention verte (environnement) n'est pas un achat ; l'éducation mêle salaires (plus bas) et achats
+      needs[k] = needs[k] - wished + Math.min(wished, bought);
+    }
+    // effectifs × salaires pour les fonctions publiques ; pensions et revenu universel d'après les effectifs
+    for (const j of PUBLIC_JOBS) needs[STAFF_KEY[j]] += this.staffTarget(j, pop) * p.publicSalary * 100 * ix * D;
+    needs.pensions = retirees * p.pension * 100 * ix * D;
+    needs.revenuUniversel = adults * p.ubi * 100 * ix * D;
     // intérêts : la dette actuelle à son taux, plus le nouvel emprunt de l'année à mi-parcours
     let coupons = 0;
     for (const t of this.debt) for (const n of t.holders.values()) coupons += n * t.rate;
@@ -2558,7 +2964,7 @@ export class Simulation {
     // deux mois de dépenses est remise en circulation dans l'année
     const spentYear = months.reduce((s, m) => s + m.spend, 0) * ann;
     if (this.debtTotal <= 0) allowed = Math.max(allowed, 0) + Math.max(0, this.treasury - spentYear / 6);
-    const base = needs.salaires + needs.pensions + needs.revenuUniversel + needs.aideSociale + needs.remboursementsSante + needs.subsidesPrimes + needs.achats;
+    const base = SPEND_KEYS.reduce((s, k) => s + (OFF_BUDGET.includes(k) ? 0 : needs[k]), 0);
     needs.interets = coupons + Math.max(0, base + coupons - revenue) * Math.max(this.lastRate, 0.02) * 0.5;
     // l'État dépense ses recettes plus le déficit permis : si c'est moins que les besoins, les
     // enveloppes sont réduites au prorata ; si c'est plus, elles sont augmentées (jusqu'à 160 %, pour
@@ -2724,7 +3130,9 @@ export class Simulation {
     for (const m of res.matches) rate = Math.max(rate, rates.get(m.bid.tag!) ?? 0);
     // prêteur en dernier ressort : la banque centrale complète une enchère ratée (dans sa limite)
     const placed = res.matches.reduce((s, m) => s + m.qty, 0);
-    const lastResort = Math.min(Math.max(0, amount - placed) , Math.max(0, cbRoom - res.matches.filter((m) => m.bid.owner === CB_KEY).reduce((s, m) => s + m.qty, 0)));
+    // pas de monnaie nouvelle pour boucher le trou quand l'inflation dépasse 10 % : elle validerait la
+    // spirale prix → dépenses indexées → déficit ; l'État paie alors moins (frein, comme sans banque centrale)
+    const lastResort = this.inflation > 0.1 ? 0 : Math.min(Math.max(0, amount - placed) , Math.max(0, cbRoom - res.matches.filter((m) => m.bid.owner === CB_KEY).reduce((s, m) => s + m.qty, 0)));
     if (lastResort > 1000) {
       res.matches.push({ bid: { owner: CB_KEY, qty: lastResort, price: 0, filled: 0 }, ask, qty: lastResort });
       rate = Math.max(rate, this.policyRate);
@@ -3173,7 +3581,7 @@ export class Simulation {
     const days = this.policy.surplusDays > 0 ? this.policy.surplusDays : this.debtTotal <= 0 ? 90 : 0;
     if (days <= 0) return;
     const sp = this.stateMonth.spending;
-    const monthly = sp.salaires + sp.pensions + sp.aideSociale + sp.revenuUniversel + sp.remboursementsSante + sp.subsidesPrimes + sp.achats + sp.interets;
+    const monthly = SPEND_KEYS.reduce((s, k) => s + (k === 'aideUrgence' || k === 'redistribution' ? 0 : sp[k]), 0);
     const target = (monthly / K.daysPerMonth) * days;
     const excess = this.treasury - target;
     if (excess <= 0) return;
@@ -3184,13 +3592,21 @@ export class Simulation {
     for (const a of adults) this.spend('redistribution', a, each, false);
   }
 
+  /** Effectif visé d'une fonction publique (avant coupes budgétaires). */
+  private staffTarget(job: Job, pop: number): number {
+    const p = this.policy;
+    // travaux publics : la moitié du budget d'investissement paie des salaires
+    if (job === 'cantonnier') return Math.round((p.publicInvestment * this.gdpYear() * 0.5) / Math.max(1, p.publicSalary * 100 * this.indexFactor() * D));
+    return Math.round(((p[STAFF_POLICY[job]] as number) * pop) / 1000);
+  }
+
   private publicHiring(): void {
     const p = this.policy;
     const pop = this.agents.reduce((s, a) => s + (a.alive ? 1 : 0), 0);
     const salary = p.publicSalary * 100 * this.indexFactor();
     for (const job of PUBLIC_JOBS) {
       // le budget voté peut imposer moins de postes que prévu (coupes au prorata)
-      const target = Math.round(((p.teachersPer1000 * pop) / 1000) * this.budgetCut);
+      const target = Math.round(this.staffTarget(job, pop) * this.budgetCut);
       const current = this.agents.filter((a) => a.alive && a.publicJob && a.job === job);
       if (current.length > target) {
         current.sort((x, y) => y.jobSince - x.jobSince);
@@ -3209,7 +3625,8 @@ export class Simulation {
           }
           return a.status === 'chomeur' || a.lastIncome / K.daysPerMonth < salary * 1.1;
         });
-        cands.sort((x, y) => y.edu - x.edu);
+        // les plus diplômés pour les postes qualifiés, les moins diplômés pour les travaux publics
+        cands.sort((x, y) => (job === 'cantonnier' || job === 'garde' ? x.edu - y.edu : y.edu - x.edu));
         for (const a of cands.slice(0, target - current.length)) this.makePublic(a, job);
       }
       // fonctionnaires mal payés (État à court d'argent) : démission possible
@@ -3227,11 +3644,23 @@ export class Simulation {
   // =========================================================================
   // Statistiques
 
-  private cpiRaw(): number {
-    const w: Partial<Record<Good, number>> = { pain: 0.35, poisson_prep: 0.15, viande: 0.12, fromage: 0.08, lait: 0.08, oeufs: 0.1, fruits: 0.12, bois: 0.05 };
-    let s = 0;
-    for (const g of RETAIL_GOODS) s += (w[g] ?? 0) * this.lastR[g];
-    return s;
+  /** Mise à jour de l'IPC chaîné après le marché de détail (prix de la veille → prix du jour). */
+  private updateCpi(prev: Record<Good, number>): void {
+    const goods = Object.keys(this.cpiShare) as Good[];
+    let spend = 0;
+    const today: Partial<Record<Good, number>> = {};
+    for (const g of goods) {
+      today[g] = (this.d.retailVolume[g] ?? 0) * this.lastR[g];
+      spend += today[g]!;
+    }
+    let dlog = 0;
+    let tot = 0;
+    for (const g of goods) {
+      if (spend > 0) this.cpiShare[g] = this.cpiShare[g]! * (29 / 30) + (today[g]! / spend) / 30;
+      tot += this.cpiShare[g]!;
+    }
+    for (const g of goods) if (prev[g] > 0 && this.lastR[g] > 0) dlog += (this.cpiShare[g]! / tot) * Math.log(this.lastR[g] / prev[g]);
+    this.cpiChain *= Math.exp(dlog);
   }
 
   wealthOf(a: Agent, values?: Map<number, number>): number {
@@ -3257,7 +3686,8 @@ export class Simulation {
   private recordStats(): void {
     const money = this.totalMoney();
     this.moneyError = money.total - this.moneyBase;
-    let pop = 0, enfants = 0, actifs = 0, chomeurs = 0, retraites = 0, health = 0, eduSum = 0, eduN = 0, hungry = 0, sick = 0, pubEmp = 0;
+    let pop = 0, enfants = 0, actifs = 0, chomeurs = 0, retraites = 0, health = 0, eduSum = 0, eduN = 0, hungry = 0, sick = 0, pubEmp = 0, heads = 0, poorHeads = 0;
+    const poorLine = this.policy.socialAidThreshold * 100 * this.indexFactor();
     const workersByJob = zeroJobs();
     for (const a of this.agents) {
       if (!a.alive) continue;
@@ -3265,6 +3695,10 @@ export class Simulation {
       health += a.health;
       if (a.fed < 0.9) hungry++;
       if (a.sick) sick++;
+      if (this.isHead(a)) {
+        heads++;
+        if (a.money < poorLine * this.householdSize(a)) poorHeads++;
+      }
       if (a.status === 'enfant') enfants++;
       else {
         eduSum += a.edu;
@@ -3355,7 +3789,7 @@ export class Simulation {
       fishStock: this.fishStock, forestStock: this.forestStock,
       firms, independents: indep, avgFirmSize: firms ? firmWorkers / firms : 0, biggestFirm: biggest,
       employees, publicEmployees: pubEmp,
-      cpi: (this.cpiRaw() / this.cpiBase) * 100,
+      cpi: this.cpiChain,
       velocity: money.total > 0 ? (this.d.gdp * D) / money.total : 0,
       p90p10: this.lastP9010,
       careActs: this.d.careActs, careDenied: this.d.careDenied, careNoDoctor: this.d.careNoDoctor, sickUntreated: this.d.sickUntreated,
@@ -3371,6 +3805,19 @@ export class Simulation {
       moneyCreated: { bc: e(this.moneyCreated.bc), banque: e(this.moneyCreated.banque), etranger: e(this.moneyCreated.etranger) },
       policyRate: this.policyRate, inflation: this.inflation,
       bankLoans: e(this.bankLoansTotal), cbDebt: e(this.cbBonds), foreignDebt: e(this.foreignBonds), bankEquity: e(this.bankEquity),
+      energyBySource: { ...this.d.energyBySource }, energyUse: { ...this.d.energyUse }, emissions: this.d.emissions,
+      pollution: this.pollution / K.pollutionRef, oilLeft: this.oilReserve / K.oilReserve, gasLeft: this.gasReserve / K.gasReserve,
+      staffCov: {
+        administration: this.staffCov('administrateur', K.adminRef), police: this.staffCov('policier', K.policeRef),
+        sante: this.staffCov('infirmier', K.nurseRef), nature: this.staffCov('garde', K.rangerRef),
+        ecoles: this.kidsN ? Math.min(1, ((this.staffN.enseignant ?? 0) * K.pupilsPerTeacher) / Math.max(1, this.kidsN * 0.62)) : 1,
+      },
+      taxEff: this.taxEff,
+      infraCov: this.infra / Math.max(1, K.infraPerCapita * 100 * pop) / (2 / 3),
+      socialHousing: Math.floor(this.housing), landBonus: this.landBonus, siloStock: invQty(this.silo, 'ble'),
+      schoolCov: this.schoolCov, cultureCov: this.cultureCov,
+      thefts: this.d.thefts, coldRate: pop ? this.d.cold / pop : 0, poorRate: heads ? poorHeads / heads : 0,
+      deathAges: this.d.deathAges, infantDeaths: this.d.infantDeaths,
     };
     this.history.push(row);
   }

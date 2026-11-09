@@ -3,7 +3,7 @@
 
 export const GOODS = [
   'ble', 'pain', 'poisson', 'poisson_prep', 'betail', 'viande',
-  'lait', 'fromage', 'oeufs', 'fruits', 'bois', 'outils', 'artisanat',
+  'lait', 'fromage', 'oeufs', 'fruits', 'bois', 'outils', 'artisanat', 'energie',
 ] as const;
 export type Good = (typeof GOODS)[number];
 
@@ -35,6 +35,8 @@ export const GOOD_DEFS: Record<Good, GoodDef> = {
   bois:         { id: 'bois',         label: 'Bois',           shelf: 1e7,   nutrition: 0,    retail: true,  wholesale0: 121, color: '#744210' },
   outils:       { id: 'outils',       label: 'Outils',         shelf: 1e7,   nutrition: 0,    retail: false, wholesale0: 643, color: '#718096' },
   artisanat:    { id: 'artisanat',    label: 'Artisanat',      shelf: 1e7,   nutrition: 0,    retail: true,  wholesale0: 250, color: '#d53f8c' },
+  // énergie (pétrole, gaz ou renouvelable, indifférenciée à l'usage) : chauffage des ménages, machines des producteurs
+  energie:      { id: 'energie',      label: 'Énergie',        shelf: 90,    nutrition: 0,    retail: true,  wholesale0: 90,  color: '#dd6b20' },
 };
 
 export const RETAIL_GOODS: Good[] = GOODS.filter((g) => GOOD_DEFS[g].retail);
@@ -46,7 +48,8 @@ export const RETAIL_MARGIN0 = 14;
 export const JOBS = [
   'cerealier', 'pecheur', 'eleveur', 'aviculteur', 'arboriculteur', 'bucheron',
   'boulanger', 'poissonnier', 'boucher', 'fromager', 'charpentier', 'artisan',
-  'commercant', 'medecin', 'assureur', 'enseignant',
+  'commercant', 'medecin', 'assureur', 'petrolier', 'gazier', 'energieVerte',
+  'enseignant', 'administrateur', 'policier', 'infirmier', 'garde', 'cantonnier',
 ] as const;
 export type Job = (typeof JOBS)[number];
 export type JobCategory = 'production' | 'transformation' | 'commerce' | 'sante' | 'assurance' | 'service';
@@ -54,7 +57,9 @@ export type JobCategory = 'production' | 'transformation' | 'commerce' | 'sante'
 export type Natural =
   | { kind: 'land'; cap: number } // rendements décroissants au-delà de `cap` travailleurs
   | { kind: 'fish' }
-  | { kind: 'forest' };
+  | { kind: 'forest' }
+  | { kind: 'oil' } // gisement fini : le rendement baisse à mesure qu'il s'épuise
+  | { kind: 'gas' };
 
 export interface JobDef {
   id: Job;
@@ -90,11 +95,23 @@ export const JOB_DEFS: Record<Job, JobDef> = {
   commercant:    { id: 'commercant',    label: 'Commerçant',    cat: 'commerce',       inputs: {},            outputs: {},                          batches: 0,    share: 0.08,  minEdu: 0.3,  color: '#805ad5' },
   medecin:       { id: 'medecin',       label: 'Médecin',       cat: 'sante',          inputs: {},            outputs: {},                          batches: 0,    share: 0.02,  minEdu: 0.75, color: '#e53e3e' },
   assureur:      { id: 'assureur',      label: 'Assureur santé', cat: 'assurance',     inputs: {},            outputs: {},                          batches: 0,    share: 0.003, minEdu: 0.5,  color: '#3182ce' },
+  petrolier:     { id: 'petrolier',     label: 'Pétrolier',     cat: 'production',     inputs: {},            outputs: { energie: 1 },              batches: 7,    natural: { kind: 'oil' },            share: 0.007, minEdu: 0.2,  color: '#1a202c' },
+  gazier:        { id: 'gazier',        label: 'Gazier',        cat: 'production',     inputs: {},            outputs: { energie: 1 },              batches: 5,    natural: { kind: 'gas' },            share: 0.007, minEdu: 0.2,  color: '#a0aec0' },
+  energieVerte:  { id: 'energieVerte',  label: 'Énergie verte', cat: 'production',     inputs: {},            outputs: { energie: 1 },              batches: 3.4,  share: 0.007, minEdu: 0.3,  color: '#38a169' },
+  // fonctions publiques (effectifs fixés par la politique, payés par l'État)
   enseignant:    { id: 'enseignant',    label: 'Enseignant',    cat: 'service',        inputs: {},            outputs: {},                          batches: 0,    share: 0.02,  minEdu: 0.6,  color: '#319795' },
+  administrateur: { id: 'administrateur', label: 'Administrateur', cat: 'service',     inputs: {},            outputs: {},                          batches: 0,    share: 0,     minEdu: 0.45, color: '#4a5568' },
+  policier:      { id: 'policier',      label: 'Policier',      cat: 'service',        inputs: {},            outputs: {},                          batches: 0,    share: 0,     minEdu: 0.25, color: '#2c5282' },
+  infirmier:     { id: 'infirmier',     label: 'Infirmier',     cat: 'service',        inputs: {},            outputs: {},                          batches: 0,    share: 0,     minEdu: 0.5,  color: '#f687b3' },
+  garde:         { id: 'garde',         label: 'Garde nature',  cat: 'service',        inputs: {},            outputs: {},                          batches: 0,    share: 0,     minEdu: 0.15, color: '#276749' },
+  cantonnier:    { id: 'cantonnier',    label: 'Travaux publics', cat: 'service',      inputs: {},            outputs: {},                          batches: 0,    share: 0,     minEdu: 0.1,  color: '#975a16' },
 };
 
 export const MARKET_JOBS: Job[] = JOBS.filter((j) => JOB_DEFS[j].cat !== 'service');
-export const PUBLIC_JOBS: Job[] = ['enseignant'];
+export const PUBLIC_JOBS: Job[] = ['enseignant', 'administrateur', 'policier', 'infirmier', 'garde', 'cantonnier'];
+/** Producteurs d'énergie et émissions par unité produite (pollution locale et CO2, unités arbitraires). */
+export const ENERGY_JOBS: Job[] = ['petrolier', 'gazier', 'energieVerte'];
+export const EMISSIONS: Partial<Record<Job, number>> = { petrolier: 1, gazier: 0.55, energieVerte: 0 };
 
 /** Constantes du modèle (non réglables dans l'UI). */
 export const K = {
@@ -146,6 +163,35 @@ export const K = {
   worldRate: 0.03,
   /** Durée des crédits bancaires (mois, remboursement à annuités constantes en capital). */
   loanMonths: 24,
+  // --- énergie
+  /** Gisements de départ (unités d'énergie extractibles). */
+  oilReserve: 400000,
+  gasReserve: 300000,
+  /** Énergie consommée par travailleur et par jour par les machines d'un producteur (ferme, bateau, scierie). */
+  energyPerWorker: 0.3,
+  /** Gain de productivité d'un producteur équipé de machines alimentées. */
+  energyBonus: 0.25,
+  /** Pollution : stock qui se résorbe lentement (1/720 par jour) ; référence = 120 unités émises par jour. */
+  pollutionDecay: 1 / 720,
+  pollutionRef: 120 * 720,
+  // --- services publics : effectifs de référence (pour 1000 habitants), effet neutre à ce niveau
+  adminRef: 8,
+  policeRef: 3,
+  nurseRef: 5,
+  rangerRef: 1.5,
+  /** Infrastructures (routes, port, réseaux) : valeur de référence par habitant (écus aux prix de départ) et usure. */
+  infraPerCapita: 1000,
+  infraLife: 20 * 360,
+  /** Logement social : bois et outils par logement, durée de vie. */
+  housingWood: 25,
+  housingTools: 1,
+  housingLife: 40 * 360,
+  /** Irrigation et défrichement : hausse de la capacité des terres par outil investi, usure. */
+  landPerTool: 0.000015,
+  landLife: 30 * 360,
+  /** Silo public : durée de conservation du blé stocké, capacité en jours de consommation. */
+  siloShelf: 360,
+  siloDays: 60,
 };
 
 export type FiscalRule = 'equilibre' | 'cibleDeficit' | 'freinDette';
@@ -199,6 +245,26 @@ export interface Policy {
   creditLimit: number; // encours maximal des crédits bancaires aux entreprises (part du PIB), 0 = pas de crédit
   bankSpread: number; // marge de la banque au-dessus du taux directeur (annuelle)
   foreignDebtCap: number; // part maximale de la dette détenue à l'étranger (part du PIB), 0 = île fermée
+  // Services publics (effectifs pour 1000 habitants)
+  adminPer1000: number; // administration : perception des impôts (moins d'agents → fraude)
+  policePer1000: number; // police et justice : vols commis par les foyers affamés
+  nursesPer1000: number; // santé publique (prévention) : moins de maladies
+  rangersPer1000: number; // gardes nature : repousse des forêts et des poissons
+  // Transferts sociaux (écus / jour)
+  familyAllowance: number; // allocations familiales, par enfant
+  sickPay: number; // indemnité journalière des actifs malades ou invalides
+  unemploymentBenefit: number; // allocation de chômage
+  // Achats et investissements publics
+  publicInvestment: number; // infrastructures (moitié travaux publics, moitié bois et outils), part du PIB par an
+  schoolSupplies: number; // matériel scolaire, écus par élève et par an
+  socialHousing: number; // part des foyers logés dans des logements sociaux (moins de chauffage, pas de froid)
+  culture: number; // culture et sport, écus par habitant et par an (santé, lien social)
+  landImprovement: number; // irrigation et défrichement, part du PIB par an (capacité des terres)
+  grainReserve: boolean; // silo public : achète le blé sous le prix plancher, le revend au-dessus du plafond
+  grainFloor: number; // prix plancher du blé (part de la valeur du travail d'un céréalier)
+  // Énergie et environnement
+  carbonTax: number; // écus par unité émise (pétrole, gaz), payée par les producteurs
+  greenSubsidy: number; // écus par unité d'énergie verte produite
   // Réglementation
   minWage: number; // écus / jour
   shopRent: number; // écus / jour / commerce (taxe sur les locaux)
@@ -207,10 +273,10 @@ export interface Policy {
 }
 
 export const DEFAULT_POLICY: Policy = {
-  incomeTaxLow: 0.08,
-  incomeTaxHigh: 0.22,
+  incomeTaxLow: 0.1,
+  incomeTaxHigh: 0.25,
   incomeTaxThreshold: 150,
-  vat: 0.09,
+  vat: 0.1,
   corporateTax: 0.1,
   wealthTax: 0,
   wealthTaxThreshold: 2000,
@@ -243,6 +309,22 @@ export const DEFAULT_POLICY: Policy = {
   creditLimit: 0.15,
   bankSpread: 0.03,
   foreignDebtCap: 0.05,
+  adminPer1000: 8,
+  policePer1000: 3,
+  nursesPer1000: 5,
+  rangersPer1000: 1.5,
+  familyAllowance: 0.4,
+  sickPay: 2,
+  unemploymentBenefit: 2.5,
+  publicInvestment: 0.02,
+  schoolSupplies: 10,
+  socialHousing: 0.1,
+  culture: 8,
+  landImprovement: 0.004,
+  grainReserve: true,
+  grainFloor: 0.6,
+  carbonTax: 0,
+  greenSubsidy: 0.1,
   minWage: 2.5,
   shopRent: 1.5,
   fishingQuota: 0,

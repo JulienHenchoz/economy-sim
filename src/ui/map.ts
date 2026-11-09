@@ -34,6 +34,14 @@ const ZONES: Record<Job, Zone> = {
   medecin: { x: 600, y: 225, r: 22, label: 'Cabinets médicaux', icon: '⚕️', color: '#e53e3e' },
   assureur: { x: 567, y: 125, r: 18, label: 'Assurances', icon: '📋', color: '#3182ce' },
   enseignant: { x: 455, y: 255, r: 22, label: 'École', icon: '🏫', color: '#319795' },
+  petrolier: { x: 165, y: 470, r: 26, label: 'Puits de pétrole', icon: '🛢️', color: '#1a202c' },
+  gazier: { x: 850, y: 215, r: 24, label: 'Gisement de gaz', icon: '🔥', color: '#a0aec0' },
+  energieVerte: { x: 750, y: 575, r: 32, label: 'Éoliennes et panneaux', icon: '🌬️', color: '#38a169' },
+  administrateur: { x: 565, y: 338, r: 14, label: 'Administration', icon: '🗂️', color: '#4a5568' },
+  policier: { x: 378, y: 300, r: 16, label: 'Police et tribunal', icon: '⚖️', color: '#2c5282' },
+  infirmier: { x: 645, y: 238, r: 16, label: 'Centre de santé', icon: '🩺', color: '#f687b3' },
+  garde: { x: 165, y: 260, r: 18, label: 'Gardes nature', icon: '🦌', color: '#276749' },
+  cantonnier: { x: 705, y: 398, r: 18, label: 'Travaux publics', icon: '🚧', color: '#975a16' },
 };
 const TOWN_HALL = { x: 530, y: 300, label: 'Mairie', icon: '🏛️' };
 /** Quartiers d'habitation. */
