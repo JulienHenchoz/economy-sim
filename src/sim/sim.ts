@@ -1041,8 +1041,8 @@ export class Simulation {
   }
 
   /**
-   * Énergie produite : épuisement des gisements, émissions, taxe carbone (payée par le producteur,
-   * dans la limite de sa trésorerie) et subvention à l'énergie verte (payée par l'État).
+   * Énergie produite : épuisement des gisements, émissions et subvention à l'énergie verte (payée par
+   * l'État). La taxe carbone est prélevée à la vente (marché de gros).
    */
   private energyProduced(b: Business, out: number): void {
     const src = b.job === 'petrolier' ? 'petrole' : b.job === 'gazier' ? 'gaz' : 'vert';
@@ -1053,15 +1053,6 @@ export class Simulation {
     this.pollution += em;
     this.d.emissions += em;
     const p = this.policy;
-    if (em > 0 && p.carbonTax > 0) {
-      const t = Math.min(b.cash, Math.round(em * p.carbonTax * 100 * this.indexFactor()));
-      if (t > 0) {
-        b.cash -= t;
-        b.otherMonth += t;
-        this.collect('taxeCarbone', t);
-        this.flow('production', 'etat', t);
-      }
-    }
     if (b.job === 'energieVerte' && p.greenSubsidy > 0) {
       const need = Math.round(out * p.greenSubsidy * 100 * this.indexFactor());
       this.needMonth.environnement += need;
@@ -1131,7 +1122,9 @@ export class Simulation {
         }
         // producteur : prix de réserve = 30 % de la valeur de son travail ; en dessous il préfère garder
         if (def.outputs[g] !== undefined && def.cat === 'production') {
-          const floor = (this.laborPerBatch(b.job) * 0.3) / def.outputs[g]! / Object.keys(def.outputs).length;
+          let floor = (this.laborPerBatch(b.job) * 0.3) / def.outputs[g]! / Object.keys(def.outputs).length;
+          // un producteur d'énergie fossile ne vend pas sous la taxe carbone qu'il devra payer
+          if (g === 'energie') floor += (EMISSIONS[b.job] ?? 0) * this.policy.carbonTax * 100 * this.indexFactor();
           if (this.askOf(b, g) < floor) b.ask[g] = floor;
         }
         const p = this.askOf(b, g);
@@ -1303,6 +1296,15 @@ export class Simulation {
         seller.cash += cost;
         seller.revDay += cost;
         seller.revMonth += cost;
+        // taxe carbone : accise sur chaque unité d'énergie fossile vendue, retenue sur le produit de la vente
+        if (g === 'energie' && (EMISSIONS[seller.job] ?? 0) > 0 && this.policy.carbonTax > 0) {
+          const t = Math.min(cost, Math.round(q * EMISSIONS[seller.job]! * this.policy.carbonTax * 100 * this.indexFactor()));
+          seller.cash -= t;
+          seller.revDay -= t;
+          seller.revMonth -= t;
+          this.collect('taxeCarbone', t);
+          this.flow('production', 'etat', t);
+        }
         buyer.costDay += cost;
         if (g === 'outils') buyer.otherMonth += cost;
         else {

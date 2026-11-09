@@ -1585,11 +1585,15 @@ const PRESETS: Record<string, { label: string; p: Partial<Policy> }> = {
   defaut: { label: 'Par défaut', p: DEFAULT_POLICY },
   laisser: {
     label: 'Laisser-faire',
-    p: { incomeTaxLow: 0.03, incomeTaxHigh: 0.03, vat: 0.03, corporateTax: 0, wealthTax: 0, inheritanceTax: 0, teachersPer1000: 3, pension: 0, ubi: 0, socialAidAmount: 0, minWage: 0, shopRent: 0.5, secuRate: 0, secuRatePoor: 0, secuContribution: 0, insuranceMandatory: false, insuranceRiskRating: 1, premiumIncomeCap: 0, insuranceMinLossRatio: 0, fiscalRule: 'equilibre', schoolMeals: 0, disasterRelief: 0 },
+    p: { incomeTaxLow: 0.03, incomeTaxHigh: 0.03, vat: 0.03, corporateTax: 0, wealthTax: 0, inheritanceTax: 0, teachersPer1000: 3, pension: 0, ubi: 0, socialAidAmount: 0, minWage: 0, shopRent: 0.5, secuRate: 0, secuRatePoor: 0, secuContribution: 0, insuranceMandatory: false, insuranceRiskRating: 1, premiumIncomeCap: 0, insuranceMinLossRatio: 0, fiscalRule: 'equilibre', schoolMeals: 0, disasterRelief: 0, adminPer1000: 4, policePer1000: 2, nursesPer1000: 0, rangersPer1000: 0, familyAllowance: 0, sickPay: 0, unemploymentBenefit: 0, publicInvestment: 0.005, schoolSupplies: 0, socialHousing: 0, culture: 0, landImprovement: 0, grainReserve: false, greenSubsidy: 0 },
   },
   providence: {
     label: 'État-providence',
-    p: { incomeTaxLow: 0.15, incomeTaxHigh: 0.45, incomeTaxThreshold: 120, vat: 0.12, corporateTax: 0.3, wealthTax: 0.02, wealthTaxThreshold: 1500, inheritanceTax: 0.5, teachersPer1000: 14, pension: 3.5, socialAidThreshold: 10, socialAidAmount: 3, minWage: 3.5, ubi: 0.5, secuRate: 1, secuTariff: 12, secuContribution: 0.05, fiscalRule: 'cibleDeficit', deficitTarget: 0.05, debtCeiling: 0.4, schoolMeals: 0.5, disasterRelief: 0.8 },
+    p: { incomeTaxLow: 0.15, incomeTaxHigh: 0.45, incomeTaxThreshold: 120, vat: 0.12, corporateTax: 0.3, wealthTax: 0.02, wealthTaxThreshold: 1500, inheritanceTax: 0.5, teachersPer1000: 14, pension: 3.5, socialAidThreshold: 10, socialAidAmount: 3, minWage: 3.5, ubi: 0.5, secuRate: 1, secuTariff: 12, secuContribution: 0.05, fiscalRule: 'cibleDeficit', deficitTarget: 0.05, debtCeiling: 0.8, schoolMeals: 0.5, disasterRelief: 0.8, nursesPer1000: 8, familyAllowance: 1, sickPay: 3, unemploymentBenefit: 3.5, publicInvestment: 0.03, socialHousing: 0.25, culture: 15 },
+  },
+  transition: {
+    label: 'Transition écologique',
+    p: { carbonTax: 1, greenSubsidy: 0.4, rangersPer1000: 3, publicInvestment: 0.03 },
   },
   assurance: {
     label: 'Assurance obligatoire',

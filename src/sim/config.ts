@@ -97,7 +97,7 @@ export const JOB_DEFS: Record<Job, JobDef> = {
   assureur:      { id: 'assureur',      label: 'Assureur santé', cat: 'assurance',     inputs: {},            outputs: {},                          batches: 0,    share: 0.003, minEdu: 0.5,  color: '#3182ce' },
   petrolier:     { id: 'petrolier',     label: 'Pétrolier',     cat: 'production',     inputs: {},            outputs: { energie: 1 },              batches: 7,    natural: { kind: 'oil' },            share: 0.007, minEdu: 0.2,  color: '#1a202c' },
   gazier:        { id: 'gazier',        label: 'Gazier',        cat: 'production',     inputs: {},            outputs: { energie: 1 },              batches: 5,    natural: { kind: 'gas' },            share: 0.007, minEdu: 0.2,  color: '#a0aec0' },
-  energieVerte:  { id: 'energieVerte',  label: 'Énergie verte', cat: 'production',     inputs: {},            outputs: { energie: 1 },              batches: 3.4,  share: 0.007, minEdu: 0.3,  color: '#38a169' },
+  energieVerte:  { id: 'energieVerte',  label: 'Énergie verte', cat: 'production',     inputs: {},            outputs: { energie: 1 },              batches: 5.5,  share: 0.007, minEdu: 0.3,  color: '#38a169' },
   // fonctions publiques (effectifs fixés par la politique, payés par l'État)
   enseignant:    { id: 'enseignant',    label: 'Enseignant',    cat: 'service',        inputs: {},            outputs: {},                          batches: 0,    share: 0.02,  minEdu: 0.6,  color: '#319795' },
   administrateur: { id: 'administrateur', label: 'Administrateur', cat: 'service',     inputs: {},            outputs: {},                          batches: 0,    share: 0,     minEdu: 0.45, color: '#4a5568' },
@@ -302,7 +302,7 @@ export const DEFAULT_POLICY: Policy = {
   schoolMeals: 0.4,
   fiscalRule: 'cibleDeficit',
   deficitTarget: 0.03,
-  debtCeiling: 0.2,
+  debtCeiling: 0.6,
   disasterRelief: 0.5,
   inflationTarget: 0.02,
   cbFinancing: 0.3,
