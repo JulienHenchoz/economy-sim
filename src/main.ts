@@ -5,7 +5,7 @@ import {
   DEFAULT_INIT, DEFAULT_POLICY, EVENT_DEFS, FISCAL_RULES, GOODS, GOOD_DEFS, JOBS, JOB_DEFS, RETAIL_GOODS,
   type EventKind, type FiscalRule, type Good, type InitConfig, type Job, type Policy,
 } from './sim/config';
-import type { AgentRow, DayStats, MapState, NewsItem, Snapshot } from './sim/sim';
+import type { AgentRow, DayStats, MapState, NewsItem, Snapshot } from './sim/types';
 import type { BranchInfo, FromWorker, Mark, ToWorker } from './worker';
 import { IslandMap, RICHNESS_COLORS } from './ui/map';
 

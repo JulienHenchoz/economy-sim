@@ -5,3 +5,6 @@ dist/
 # copies de travail des sessions et sauvegardes locales
 .wip-*/
 .bak-*/
+# cœur Rust : artefacts de compilation
+sim-rs/target/
+src/wasm/ile.wasm

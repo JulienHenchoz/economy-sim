@@ -1,6 +1,6 @@
 // Carte animée de l'île : zones de travail, habitants (couleur = richesse), pièces qui circulent.
 import { JOBS, JOB_DEFS, type Job } from '../sim/config';
-import { agentName, type FlowNode, type MapAgent, type MapState } from '../sim/sim';
+import { agentName, type FlowNode, type MapAgent, type MapState } from '../sim/types';
 
 const W = 1000;
 const H = 680;

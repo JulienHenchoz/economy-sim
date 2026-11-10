@@ -1,7 +1,10 @@
 /// <reference lib="webworker" />
-// Fait tourner la simulation hors du fil principal. Gère aussi la ligne du temps : instantanés
-// réguliers, consultation du passé, branches (« et si… ») et repères (changements de politique).
-import { Simulation, restoreState, saveState, type AgentRow, type DayStats, type MapState, type SimState } from './sim/sim';
+// Fait tourner la simulation (cœur Rust compilé en WebAssembly) hors du fil principal. Gère aussi la
+// ligne du temps : instantanés réguliers, consultation du passé, branches (« et si… ») et repères
+// (changements de politique). Les instantanés vivent dans la mémoire du module : on les compte pour
+// libérer ceux qu'aucune branche n'utilise plus.
+import { WasmSim, freeSnap, loadWasm, type AgentDetail } from './sim/wasm';
+import type { AgentRow, DayStats, MapState, Snapshot } from './sim/types';
 import type { EventKind, InitConfig, Job, Policy } from './sim/config';
 
 export interface Mark {
@@ -39,11 +42,11 @@ export type ToWorker =
 export type FromWorker =
   | { type: 'reset'; init: InitConfig; policy: Policy }
   | { type: 'history'; rows: DayStats[]; marks: Mark[]; branches: BranchInfo[]; current: number; snapDays: number[]; policy: Policy }
-  | { type: 'tick'; rows: DayStats[]; snapshot: ReturnType<Simulation['snapshot']>; map: MapState | null; running: boolean; msPerDay: number; marks: Mark[]; snapDays: number[] }
-  | { type: 'view'; day: number; snapshot: ReturnType<Simulation['snapshot']>; map: MapState; policy: Policy }
+  | { type: 'tick'; rows: DayStats[]; snapshot: Snapshot; map: MapState | null; running: boolean; msPerDay: number; marks: Mark[]; snapDays: number[] }
+  | { type: 'view'; day: number; snapshot: Snapshot; map: MapState; policy: Policy }
   | { type: 'compare'; id: number | null; name: string; color: string; rows: DayStats[] }
   | { type: 'branches'; branches: BranchInfo[]; current: number }
-  | { type: 'agent'; detail: ReturnType<Simulation['agentDetail']> }
+  | { type: 'agent'; detail: AgentDetail | null }
   | { type: 'agents'; rows: AgentRow[]; total: number }
   | { type: 'error'; message: string };
 
@@ -55,9 +58,9 @@ interface Branch {
   parent: number | null;
   forkDay: number;
   color: string;
-  sim: Simulation;
-  /** Instantanés par jour ; partagés (en lecture seule) avec les branches filles. */
-  snaps: Map<number, SimState>;
+  sim: WasmSim;
+  /** Instantanés par jour (numéros dans le module) ; partagés avec les branches filles. */
+  snaps: Map<number, number>;
   marks: Mark[];
 }
 
@@ -76,6 +79,25 @@ let wantMap = true;
 let viewing: number | null = null;
 
 const sim = () => cur!.sim;
+/** Nombre de branches qui utilisent chaque instantané. */
+const snapRefs = new Map<number, number>();
+function keepSnap(id: number): number {
+  snapRefs.set(id, (snapRefs.get(id) ?? 0) + 1);
+  return id;
+}
+function dropSnap(id: number) {
+  const n = (snapRefs.get(id) ?? 1) - 1;
+  if (n > 0) snapRefs.set(id, n);
+  else {
+    snapRefs.delete(id);
+    freeSnap(id);
+  }
+}
+function dropBranch(b: Branch) {
+  for (const id of b.snaps.values()) dropSnap(id);
+  b.snaps.clear();
+  b.sim.free();
+}
 const post = (msg: FromWorker) => ctx.postMessage(msg);
 const info = (b: Branch): BranchInfo => ({ id: b.id, name: b.name, parent: b.parent, forkDay: b.forkDay, lastDay: b.sim.day, color: b.color });
 
@@ -85,11 +107,17 @@ const info = (b: Branch): BranchInfo => ({ id: b.id, name: b.name, parent: b.par
  */
 function snapshotIfNeeded() {
   const s = sim();
-  if (s.day % 30 !== 0) return;
-  cur!.snaps.set(s.day, saveState(s));
-  for (const d of [...cur!.snaps.keys()]) {
+  const day = s.day;
+  if (day % 30 !== 0) return;
+  const old = cur!.snaps.get(day);
+  cur!.snaps.set(day, keepSnap(s.save()));
+  if (old !== undefined) dropSnap(old);
+  for (const [d, id] of [...cur!.snaps]) {
     if (d === 0 || d === cur!.forkDay) continue;
-    if (d < s.day - 360 && d % 360 !== 0) cur!.snaps.delete(d);
+    if (d < day - 360 && d % 360 !== 0) {
+      cur!.snaps.delete(d);
+      dropSnap(id);
+    }
   }
 }
 
@@ -99,8 +127,9 @@ function snapDays(): number[] {
 
 function sendHistory() {
   if (!cur) return;
-  sent = cur.sim.history.length;
-  post({ type: 'history', rows: cur.sim.history, marks: cur.marks, branches: branches.map(info), current: cur.id, snapDays: snapDays(), policy: cur.sim.policy });
+  const rows = cur.sim.history(0);
+  sent = rows.length;
+  post({ type: 'history', rows, marks: cur.marks, branches: branches.map(info), current: cur.id, snapDays: snapDays(), policy: cur.sim.policy });
   flush(true);
 }
 
@@ -110,8 +139,8 @@ function flush(force = false) {
   if (!force && now - lastPost < 250) return;
   lastPost = now;
   const s = sim();
-  const rows = s.history.slice(sent);
-  sent = s.history.length;
+  const rows = s.history(sent);
+  sent += rows.length;
   post({ type: 'tick', rows, snapshot: s.snapshot(), map: wantMap ? s.mapState() : null, running, msPerDay, marks: cur.marks, snapDays: snapDays() });
 }
 
@@ -140,7 +169,7 @@ function loop() {
         budget -= n;
         stepDays(n);
       }
-      if (sim().agents.every((a) => !a.alive)) running = false;
+      if (sim().allDead()) running = false;
     } catch (e) {
       running = false;
       post({ type: 'error', message: String((e as Error)?.stack ?? e) });
@@ -149,11 +178,10 @@ function loop() {
   }
   setTimeout(loop, 16);
 }
-loop();
 
 /** Instantané le plus récent au plus tard le jour `day`. */
-function snapAt(b: Branch, day: number): [number, SimState] | null {
-  let best: [number, SimState] | null = null;
+function snapAt(b: Branch, day: number): [number, number] | null {
+  let best: [number, number] | null = null;
   for (const [d, st] of b.snaps) if (d <= day && (!best || d > best[0])) best = [d, st];
   return best;
 }
@@ -162,8 +190,10 @@ function addMark(m: Mark) {
   cur!.marks.push(m);
 }
 
-ctx.onmessage = (ev: MessageEvent<ToWorker>) => {
+const ready = loadWasm().then(loop);
+ctx.onmessage = async (ev: MessageEvent<ToWorker>) => {
   const m = ev.data;
+  await ready;
   try {
     handle(m);
   } catch (e) {
@@ -174,10 +204,11 @@ ctx.onmessage = (ev: MessageEvent<ToWorker>) => {
 function handle(m: ToWorker) {
   switch (m.type) {
     case 'init': {
-      const s = new Simulation(m.init, m.policy);
+      for (const b of branches) dropBranch(b);
+      const s = WasmSim.create(m.init, m.policy);
       branches = [];
       nextId = 1;
-      cur = { id: nextId++, name: 'Principale', parent: null, forkDay: 0, color: BRANCH_COLORS[0], sim: s, snaps: new Map([[0, saveState(s)]]), marks: [] };
+      cur = { id: nextId++, name: 'Principale', parent: null, forkDay: 0, color: BRANCH_COLORS[0], sim: s, snaps: new Map([[0, keepSnap(s.save())]]), marks: [] };
       branches.push(cur);
       viewing = null;
       running = false;
@@ -213,7 +244,7 @@ function handle(m: ToWorker) {
     case 'event':
       if (!cur) break;
       sim().triggerEvent(m.kind);
-      addMark({ day: sim().day, kind: 'evenement', text: sim().news[sim().news.length - 1]?.text ?? m.kind });
+      addMark({ day: sim().day, kind: 'evenement', text: sim().lastNews() || m.kind });
       flush(true);
       break;
     case 'want':
@@ -230,8 +261,9 @@ function handle(m: ToWorker) {
       viewing = m.day;
       const sn = snapAt(cur, m.day);
       if (!sn) break;
-      const tmp = restoreState(sn[1], sim().history.slice(0, sn[0] + 1));
+      const tmp = WasmSim.restore(sn[1], sim(), sn[0] + 1);
       post({ type: 'view', day: sn[0], snapshot: tmp.snapshot(), map: tmp.mapState(), policy: tmp.policy });
+      tmp.free();
       break;
     }
     case 'fork': {
@@ -240,10 +272,9 @@ function handle(m: ToWorker) {
       if (!sn) break;
       const [day, st] = sn;
       const parent = cur;
-      const rows = parent.sim.history.slice(0, day + 1);
-      const s = restoreState(st, rows);
-      const snaps = new Map<number, SimState>();
-      for (const [d, x] of parent.snaps) if (d <= day) snaps.set(d, x);
+      const s = WasmSim.restore(st, parent.sim, day + 1);
+      const snaps = new Map<number, number>();
+      for (const [d, x] of parent.snaps) if (d <= day) snaps.set(d, keepSnap(x));
       const id = nextId++;
       const b: Branch = {
         id, name: `Branche ${id}`, parent: parent.id, forkDay: day, color: BRANCH_COLORS[(id - 1) % BRANCH_COLORS.length],
@@ -268,7 +299,7 @@ function handle(m: ToWorker) {
     }
     case 'compare': {
       const b = m.id === null ? null : branches.find((x) => x.id === m.id);
-      post({ type: 'compare', id: b?.id ?? null, name: b?.name ?? '', color: b?.color ?? '', rows: b ? b.sim.history : [] });
+      post({ type: 'compare', id: b?.id ?? null, name: b?.name ?? '', color: b?.color ?? '', rows: b ? b.sim.history(0) : [] });
       break;
     }
     case 'rename': {
@@ -279,6 +310,8 @@ function handle(m: ToWorker) {
     }
     case 'deleteBranch': {
       if (branches.length <= 1 || m.id === cur?.id) break;
+      const gone = branches.find((x) => x.id === m.id);
+      if (gone) dropBranch(gone);
       branches = branches.filter((x) => x.id !== m.id);
       post({ type: 'branches', branches: branches.map(info), current: cur!.id });
       break;
@@ -288,20 +321,7 @@ function handle(m: ToWorker) {
       break;
     case 'agents': {
       if (!cur) break;
-      const s = sim();
-      const values = new Map<number, number>();
-      for (const b of s.businesses) if (b.alive) values.set(b.id, s.bizValue(b));
-      const q = m.search.trim().toLowerCase();
-      let rows = s.agents
-        .filter((a) => a.alive)
-        .filter((a) => !m.job || a.job === m.job)
-        .filter((a) => !m.status || a.status === m.status)
-        .map((a) => s.agentRow(a, values))
-        .filter((r) => !q || r.name.toLowerCase().includes(q) || String(r.id) === q);
-      const key = m.sort;
-      rows.sort((x, y) => (x[key] - y[key]) * m.dir);
-      const total = rows.length;
-      rows = rows.slice(0, m.limit);
+      const { rows, total } = sim().agents({ sort: m.sort, dir: m.dir, job: m.job, status: m.status, search: m.search, limit: m.limit });
       post({ type: 'agents', rows, total });
       break;
     }

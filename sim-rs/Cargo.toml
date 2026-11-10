@@ -1,0 +1,27 @@
+[package]
+name = "ile"
+version = "0.1.0"
+edition = "2021"
+description = "Simulation d'économie d'une île : cœur en Rust (natif et WebAssembly)"
+
+[lib]
+crate-type = ["rlib", "cdylib"]
+
+[features]
+# chronométrage des phases de la journée (bin bench)
+profile = []
+# vérifications de cohérence après chaque phase (débogage)
+check = []
+
+[dependencies]
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+indexmap = { version = "2", features = ["serde"] }
+libm = "0.2"
+
+[profile.release]
+opt-level = 3
+lto = true
+codegen-units = 1
+panic = "abort"
+strip = true
